@@ -74,8 +74,9 @@ def _price_lines(symbols: list[str], tickers: dict) -> str:
 
 
 def top_movers(tickers: dict, n: int = 5) -> str:
-    liquid = {s: t for s, t in tickers.items() if t["quote_volume"] >= C.MIN_QUOTE_VOLUME}
-    ranked = sorted(liquid.items(), key=lambda kv: kv[1]["change_pct"])
+    liquid = sorted(((s, t) for s, t in tickers.items() if t["quote_volume"] >= C.MIN_QUOTE_VOLUME),
+                    key=lambda kv: -kv[1]["quote_volume"])[:C.MOVERS_UNIVERSE]
+    ranked = sorted(liquid, key=lambda kv: kv[1]["change_pct"])
     up = [kv for kv in ranked[::-1] if kv[1]["change_pct"] > 0][:n]
     dn = [kv for kv in ranked if kv[1]["change_pct"] < 0][:n]
     fmt = lambda kv: f"{base(kv[0])} {fmt_pct(kv[1]['change_pct'])}"

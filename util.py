@@ -34,6 +34,14 @@ def fmt_money(x: float) -> str:
     return f"{x:.0f}"
 
 
+def tri_pct(x: float | None) -> str:
+    """Изменение с треугольником: ▲0.18% / ▼2.59%. Цвет не нужен, направление видно по значку."""
+    if x is None:
+        return "—"
+    mark = "▲" if x > 0 else "▼" if x < 0 else "•"
+    return f"{mark}{abs(x):.2f}%"
+
+
 def arrow(x: float) -> str:
     return "🟢" if x > 0 else "🔴" if x < 0 else "⚪"
 

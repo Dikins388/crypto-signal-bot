@@ -7,7 +7,7 @@ import binance_data as bd
 import config as C
 from commands import top_movers
 from indicators import ema
-from util import arrow, base, fmt_pct, fmt_price, now_kyiv
+from util import base, fmt_price, now_kyiv, tri_pct
 
 MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа",
           "сентября", "октября", "ноября", "декабря"]
@@ -21,7 +21,8 @@ def fear_greed() -> str | None:
         names = {"Extreme Fear": "сильный страх", "Fear": "страх", "Neutral": "нейтрально",
                  "Greed": "жадность", "Extreme Greed": "сильная жадность"}
         name = names.get(d[0]["value_classification"], d[0]["value_classification"])
-        return f"😨 Индекс страха и жадности: <b>{v}</b> ({name}), вчера {prev}"
+        face = "😱" if v < 25 else "😨" if v < 45 else "😐" if v <= 55 else "😏" if v < 75 else "🤑"
+        return f"{face} Индекс страха и жадности: <b>{v}</b> ({name}), вчера {prev}"
     except Exception as e:
         print(f"[digest] fear&greed: {e}")
         return None
@@ -51,20 +52,20 @@ def build(symbols: list[str], tickers: dict, journal_stats: str | None) -> str:
     for extra in (btc_trend(), fear_greed()):
         if extra:
             lines.append(extra)
-    lines += ["", "<b>Топ-10 по объёму</b> (24ч / 7 дней):"]
+    lines += ["", "<b>Топ-10 по объёму</b> (цена · за 24ч · за 7 дней):"]
     for sym in symbols:
         t = tickers.get(sym)
         if not t:
             continue
-        w = ""
+        w = None
         try:
             d = bd.drop_unclosed(bd.klines(sym, "1d", limit=8))
             if len(d) >= 7:
-                w = f" / {fmt_pct((t['price'] / d['close'].iloc[-7] - 1) * 100)}"
+                w = (t["price"] / d["close"].iloc[-7] - 1) * 100
         except Exception:
             pass
-        lines.append(f"{arrow(t['change_pct'])} {base(sym)} {fmt_price(t['price'])}  "
-                     f"{fmt_pct(t['change_pct'])}{w}")
+        lines.append(f"<b>{base(sym)}</b> {fmt_price(t['price'])} · "
+                     f"{tri_pct(t['change_pct'])} · {tri_pct(w)}")
     lines += ["", top_movers(tickers)]
     if journal_stats:
         lines += ["", journal_stats]

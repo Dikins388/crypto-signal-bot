@@ -8,7 +8,7 @@ import binance_data as bd
 import config as C
 from commands import top_movers
 from digest import btc_trend, fear_greed
-from util import arrow, base, fmt_pct, fmt_price, now_kyiv
+from util import base, fmt_price, now_kyiv, tri_pct
 
 
 def channel_id() -> str | None:
@@ -38,15 +38,14 @@ def build(symbols: list[str], tickers: dict, with_context: bool) -> str:
             if extra:
                 lines.append(extra)
         lines.append("")
-    lines.append("<b>Монета · цена · 1ч · 24ч</b>")
+    lines.append("<b>Монета · цена · за 1ч · за 24ч</b>")
     for sym in symbols:
         t = tickers.get(sym)
         if not t:
             continue
         h1 = change_1h(sym, t["price"])
-        h1s = fmt_pct(h1) if h1 is not None else "—"
-        lines.append(f"{arrow(t['change_pct'])} <b>{base(sym)}</b> {fmt_price(t['price'])} · "
-                     f"{h1s} · {fmt_pct(t['change_pct'])}")
+        lines.append(f"<b>{base(sym)}</b> {fmt_price(t['price'])} · "
+                     f"{tri_pct(h1)} · {tri_pct(t['change_pct'])}")
     lines += ["", top_movers(tickers, n=3), "", "<i>Данные Binance. Не финансовая рекомендация.</i>"]
     return "\n".join(lines)
 
