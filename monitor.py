@@ -32,8 +32,8 @@ def analyze(sym: str, k15: pd.DataFrame, d1: pd.DataFrame, st: dict) -> list[str
     if abs(ch1h) >= threshold:
         key = f"move|{sym}|{int(np.sign(ch1h))}"
         if not on_cooldown(st, key):
-            word = "рост" if ch1h > 0 else "падение"
-            events.append(f"⚡ Резкий {word}: {fmt_pct(ch1h)} за час "
+            word = "Резкий рост" if ch1h > 0 else "Резкое падение"
+            events.append(f"⚡ {word}: {fmt_pct(ch1h)} за час "
                           f"(обычно ~{typical:.1f}%)")
             set_cooldown(st, key, C.EVENT_COOLDOWN_H)
 
