@@ -34,12 +34,36 @@ def fmt_money(x: float) -> str:
     return f"{x:.0f}"
 
 
-def tri_pct(x: float | None) -> str:
-    """Изменение с треугольником: ▲0.18% / ▼2.59%. Цвет не нужен, направление видно по значку."""
+FLAT_PCT = 0.05   # изменения меньше этого считаем «на месте»
+
+
+def dot_pct(x: float | None) -> str:
+    """Изменение с цветным кружком: 🟢 +0.18% / 🔴 -2.59% / ⚪ 0.01%.
+    Telegram не красит текст, цвет бывает только у эмодзи, поэтому кружки."""
     if x is None:
-        return "—"
-    mark = "▲" if x > 0 else "▼" if x < 0 else "•"
-    return f"{mark}{abs(x):.2f}%"
+        return "⚪ —"
+    mark = "🟢" if x >= FLAT_PCT else "🔴" if x <= -FLAT_PCT else "⚪"
+    return f"{mark} {x:+.2f}%"
+
+
+def fmt_price_short(x: float) -> str:
+    """Для обзоров: у дорогих монет без копеек."""
+    if x >= 1000:
+        return f"{x:,.0f}".replace(",", " ")
+    return fmt_price(x)
+
+
+def market_mood(changes: list[float]) -> str:
+    """Одна строка о рынке в целом по изменениям монет за 24ч."""
+    if not changes:
+        return ""
+    up = sum(1 for c in changes if c >= FLAT_PCT)
+    n = len(changes)
+    if up >= 0.7 * n:
+        return f"🟢 <b>Рынок растёт</b>: {up} из {n} монет в плюсе за сутки"
+    if up <= 0.3 * n:
+        return f"🔴 <b>Рынок падает</b>: {n - up} из {n} монет в минусе за сутки"
+    return f"⚪ <b>Рынок без направления</b>: {up} из {n} монет в плюсе за сутки"
 
 
 def arrow(x: float) -> str:

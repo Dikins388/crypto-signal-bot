@@ -7,7 +7,7 @@ import binance_data as bd
 import config as C
 from commands import top_movers
 from indicators import ema
-from util import base, fmt_price, now_kyiv, tri_pct
+from util import base, dot_pct, fmt_price_short, market_mood, now_kyiv
 
 MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа",
           "сентября", "октября", "ноября", "декабря"]
@@ -52,7 +52,8 @@ def build(symbols: list[str], tickers: dict, journal_stats: str | None) -> str:
     for extra in (btc_trend(), fear_greed()):
         if extra:
             lines.append(extra)
-    lines += ["", "<b>Топ-10 по объёму</b> (цена · за 24ч · за 7 дней):"]
+    lines.insert(1, market_mood([tickers[s]["change_pct"] for s in symbols if s in tickers]))
+    lines += ["", "<b>Топ-10 по объёму</b>:"]
     for sym in symbols:
         t = tickers.get(sym)
         if not t:
@@ -64,8 +65,8 @@ def build(symbols: list[str], tickers: dict, journal_stats: str | None) -> str:
                 w = (t["price"] / d["close"].iloc[-7] - 1) * 100
         except Exception:
             pass
-        lines.append(f"<b>{base(sym)}</b> {fmt_price(t['price'])} · "
-                     f"{tri_pct(t['change_pct'])} · {tri_pct(w)}")
+        lines.append(f"<b>{base(sym)}</b> {fmt_price_short(t['price'])}\n"
+                     f"      24ч {dot_pct(t['change_pct'])}   7д {dot_pct(w)}")
     lines += ["", top_movers(tickers)]
     if journal_stats:
         lines += ["", journal_stats]

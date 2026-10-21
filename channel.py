@@ -8,7 +8,7 @@ import binance_data as bd
 import config as C
 from commands import top_movers
 from digest import btc_trend, fear_greed
-from util import base, fmt_price, now_kyiv, tri_pct
+from util import base, dot_pct, fmt_price_short, market_mood, now_kyiv
 
 
 def channel_id() -> str | None:
@@ -30,23 +30,27 @@ def change_1h(sym: str, price: float) -> float | None:
         return None
 
 
+HOT_1H_PCT = 1.5   # ⚡ в строке, если монета за час сдвинулась сильнее
+
+
 def build(symbols: list[str], tickers: dict, with_context: bool) -> str:
     now = now_kyiv()
-    lines = [f"📊 <b>Рынок на {now:%H:%M}</b> (Киев)", ""]
+    rows = [(s, tickers[s]) for s in symbols if s in tickers]
+    lines = [f"📊 <b>Рынок на {now:%H:%M}</b> (Киев)",
+             market_mood([t["change_pct"] for _, t in rows]), ""]
     if with_context:
         for extra in (btc_trend(), fear_greed()):
             if extra:
                 lines.append(extra)
         lines.append("")
-    lines.append("<b>Монета · цена · за 1ч · за 24ч</b>")
-    for sym in symbols:
-        t = tickers.get(sym)
-        if not t:
-            continue
+    for sym, t in rows:
         h1 = change_1h(sym, t["price"])
-        lines.append(f"<b>{base(sym)}</b> {fmt_price(t['price'])} · "
-                     f"{tri_pct(h1)} · {tri_pct(t['change_pct'])}")
-    lines += ["", top_movers(tickers, n=3), "", "<i>Данные Binance. Не финансовая рекомендация.</i>"]
+        hot = " ⚡" if h1 is not None and abs(h1) >= HOT_1H_PCT else ""
+        lines.append(f"<b>{base(sym)}</b> {fmt_price_short(t['price'])}\n"
+                     f"      1ч {dot_pct(h1)}   24ч {dot_pct(t['change_pct'])}{hot}")
+    lines += ["", top_movers(tickers, n=3), "",
+              f"⚡ движение больше {HOT_1H_PCT:g}% за час",
+              "<i>Данные Binance. Не финансовая рекомендация.</i>"]
     return "\n".join(lines)
 
 
