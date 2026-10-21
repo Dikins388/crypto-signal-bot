@@ -47,10 +47,14 @@ def dot_pct(x: float | None) -> str:
 
 
 def fmt_price_short(x: float) -> str:
-    """Для обзоров: у дорогих монет без копеек."""
+    """Для обзоров: у дорогих монет без копеек, у дешёвых ~4 значащие цифры (0.09155, 0.00001234)."""
+    import math
     if x >= 1000:
         return f"{x:,.0f}".replace(",", " ")
-    return fmt_price(x)
+    if x <= 0:
+        return "0"
+    decimals = max(2, 3 - math.floor(math.log10(x)))
+    return f"{x:.{decimals}f}".rstrip("0").rstrip(".")
 
 
 def market_mood(changes: list[float]) -> str:

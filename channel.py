@@ -1,14 +1,22 @@
-"""Публикация статистики рынка в канал раз в CHANNEL_POST_EVERY_MIN минут."""
+"""Публикация статистики рынка в канал раз в CHANNEL_POST_EVERY_MIN минут.
+
+Пост: настроение рынка, топ-N монет по объёму (цена, за 1ч, за 24ч),
+внизу «ракеты»: монеты со всего Binance, которые за последние сутки
+выросли от дна до вершины на ROCKET_MIN_PCT% и больше.
+"""
 from __future__ import annotations
 
 import os
 import time
 
+import numpy as np
+
 import binance_data as bd
 import config as C
-from commands import top_movers
 from digest import btc_trend, fear_greed
-from util import base, dot_pct, fmt_price_short, market_mood, now_kyiv
+from util import base, fmt_price_short, market_mood, now_kyiv
+
+HOT_1H_PCT = 1.5   # ⚡ в строке, если монета за час сдвинулась сильнее
 
 
 def channel_id() -> str | None:
@@ -17,7 +25,7 @@ def channel_id() -> str | None:
 
 
 def due(st: dict) -> bool:
-    # Бот просыпается раз в 10 минут, и GitHub бывает неточен, поэтому небольшой допуск
+    # Бот просыпается раз в 10 минут, и будильник бывает неточен, поэтому небольшой допуск
     return time.time() - st.get("channel_last", 0) >= (C.CHANNEL_POST_EVERY_MIN - 3) * 60
 
 
@@ -30,10 +38,82 @@ def change_1h(sym: str, price: float) -> float | None:
         return None
 
 
-HOT_1H_PCT = 1.5   # ⚡ в строке, если монета за час сдвинулась сильнее
+def _num(x: float | None) -> str:
+    """Компактно для строки монеты: 🟢+0.18 / 🔴-2.59 (проценты, знак % в легенде)."""
+    if x is None:
+        return "⚪ —"
+    mark = "🟢" if x >= 0.05 else "🔴" if x <= -0.05 else "⚪"
+    return f"{mark}{x:+.2f}"
 
 
-def build(symbols: list[str], tickers: dict, with_context: bool) -> str:
+def _dur(minutes: float) -> str:
+    h, m = divmod(int(round(minutes / 15) * 15), 60)
+    return f"{h}ч {m:02d}м" if h else f"{m}м"
+
+
+def find_rockets(tickers: dict) -> list[dict]:
+    """Монеты, которые за 24 часа выросли от дна до последующей вершины на ROCKET_MIN_PCT%+."""
+    need = 1 + C.ROCKET_MIN_PCT / 100
+    cands = [s for s, t in tickers.items()
+             if t["quote_volume"] >= C.ROCKET_MIN_QUOTE_VOLUME and t["low"] > 0
+             and t["high"] / t["low"] >= need]           # иначе ракетой быть не могла
+    out = []
+    for sym in cands:
+        try:
+            k = bd.klines(sym, "15m", limit=97)
+        except Exception as e:
+            print(f"[ракеты] {sym}: {e}")
+            continue
+        if len(k) < 2:
+            continue
+        lows, highs = k["low"].to_numpy(), k["high"].to_numpy()
+        run_min = np.minimum.accumulate(lows)
+        run_min_idx = np.array([int(np.argmin(lows[: i + 1])) for i in range(len(lows))])
+        rise = highs / run_min
+        j = int(np.argmax(rise))
+        if rise[j] < need:
+            continue
+        i = run_min_idx[j]
+        price = tickers[sym]["price"]
+        out.append({
+            "symbol": sym,
+            "rise": (rise[j] - 1) * 100,
+            "minutes": (j - i + 1) * 15,
+            "low": float(run_min[j]), "peak": float(highs[j]),
+            "now_vs_low": (price / run_min[j] - 1) * 100,
+            "from_peak": (price / highs[j] - 1) * 100,
+            "peak_ago_min": (len(k) - 1 - j) * 15,
+        })
+    out.sort(key=lambda r: -r["rise"])
+    return out
+
+
+def rockets_block(rockets: list[dict], st: dict) -> list[str]:
+    now = time.time()
+    # Помним, какие ракеты уже показывали, чтобы отмечать новые значком 🆕. Старше суток забываем.
+    seen = {k: v for k, v in st.get("rockets_seen", {}).items() if now - v < 26 * 3600}
+    st["rockets_seen"] = seen
+    lines = [f"🚀 <b>Ракеты за сутки</b> (рост от {C.ROCKET_MIN_PCT}%, весь Binance)"]
+    if not rockets:
+        lines.append("Сейчас таких нет.")
+        return lines
+    for r in rockets[: C.ROCKETS_MAX_SHOWN]:
+        sym = r["symbol"]
+        new = sym not in seen
+        if new:
+            seen[sym] = now
+        tag = "🆕 " if new else ""
+        ago = "сейчас на пике" if r["peak_ago_min"] < 15 else f"пик {_dur(r['peak_ago_min'])} назад"
+        lines.append(
+            f"{tag}<b>{base(sym)}</b> +{r['rise']:.0f}% за {_dur(r['minutes'])} "
+            f"({fmt_price_short(r['low'])} → {fmt_price_short(r['peak'])})\n"
+            f"      {ago}, от пика {r['from_peak']:+.0f}%, от дна {r['now_vs_low']:+.0f}%")
+    if len(rockets) > C.ROCKETS_MAX_SHOWN:
+        lines.append(f"…и ещё {len(rockets) - C.ROCKETS_MAX_SHOWN}")
+    return lines
+
+
+def build(symbols: list[str], tickers: dict, with_context: bool, rockets: list[dict], st: dict) -> str:
     now = now_kyiv()
     rows = [(s, tickers[s]) for s in symbols if s in tickers]
     lines = [f"📊 <b>Рынок на {now:%H:%M}</b> (Киев)",
@@ -43,13 +123,14 @@ def build(symbols: list[str], tickers: dict, with_context: bool) -> str:
             if extra:
                 lines.append(extra)
         lines.append("")
+    lines.append(f"<b>Топ-{len(rows)}</b> · цена · % за 1ч · % за 24ч")
     for sym, t in rows:
         h1 = change_1h(sym, t["price"])
         hot = " ⚡" if h1 is not None and abs(h1) >= HOT_1H_PCT else ""
-        lines.append(f"<b>{base(sym)}</b> {fmt_price_short(t['price'])}\n"
-                     f"      1ч {dot_pct(h1)}   24ч {dot_pct(t['change_pct'])}{hot}")
-    lines += ["", top_movers(tickers, n=3), "",
-              f"⚡ движение больше {HOT_1H_PCT:g}% за час",
+        lines.append(f"<b>{base(sym)}</b> {fmt_price_short(t['price'])}  "
+                     f"{_num(h1)}  {_num(t['change_pct'])}{hot}")
+    lines += ["", *rockets_block(rockets, st), "",
+              f"⚡ больше {HOT_1H_PCT:g}% за час · 🆕 новая ракета",
               "<i>Данные Binance. Не финансовая рекомендация.</i>"]
     return "\n".join(lines)
 
@@ -60,7 +141,9 @@ def post(st: dict, symbols: list[str], tickers: dict, tg) -> bool:
         return False
     # Тренд BTC и индекс страха меняются медленно: показываем их раз в час, чтобы пост был короче
     with_context = time.time() - st.get("channel_context_last", 0) >= 55 * 60
-    text = build(symbols, tickers, with_context)
+    top = bd.top_symbols(C.CHANNEL_TOP_N, tickers)
+    rockets = find_rockets(tickers)
+    text = build(top, tickers, with_context, rockets, st)
     tg.send(text, chat_id=cid, silent=C.CHANNEL_SILENT)
     st["channel_last"] = time.time()
     if with_context:
