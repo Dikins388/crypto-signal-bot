@@ -16,13 +16,14 @@ def _creds():
     return token, chat
 
 
-def send(text: str) -> None:
-    token, chat = _creds()
+def send(text: str, chat_id: str | None = None, silent: bool = False) -> None:
+    token, own = _creds()
+    chat = chat_id or own
     for chunk in _split(text):
         for attempt in range(3):
             r = requests.post(API.format(token=token, method="sendMessage"), json={
                 "chat_id": chat, "text": chunk, "parse_mode": "HTML",
-                "disable_web_page_preview": True,
+                "disable_web_page_preview": True, "disable_notification": silent,
             }, timeout=20)
             if r.status_code == 200:
                 break
@@ -38,7 +39,7 @@ def get_updates(offset: int) -> list[dict]:
     token, _ = _creds()
     r = requests.get(API.format(token=token, method="getUpdates"),
                      params={"offset": offset, "timeout": 0,
-                             "allowed_updates": '["message"]'}, timeout=20)
+                             "allowed_updates": '["message","my_chat_member"]'}, timeout=20)
     data = r.json()
     if not data.get("ok"):
         raise RuntimeError(f"getUpdates: {data}")

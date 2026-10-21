@@ -12,6 +12,7 @@ import time
 import traceback
 
 import binance_data as bd
+import channel
 import config as C
 import commands
 import digest
@@ -23,8 +24,8 @@ ERROR_ALERT_EVERY_H = 6
 
 
 class DryTelegram:
-    def send(self, text):
-        print("---- TELEGRAM ----\n" + text + "\n")
+    def send(self, text, chat_id=None, silent=False):
+        print(f"---- TELEGRAM {chat_id or 'me'} ----\n" + text + "\n")
 
 
 def main():
@@ -104,6 +105,9 @@ def _run(st: dict, tg, dry: bool):
     for msg in out:
         tg.send(msg)
     print(f"Отправлено сообщений: {len(out)}")
+
+    if _step("канал", lambda: channel.post(st, top, tickers, tg)):
+        print("Пост в канал опубликован")
 
 
 if __name__ == "__main__":

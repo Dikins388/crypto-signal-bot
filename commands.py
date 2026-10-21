@@ -171,6 +171,21 @@ def process_commands(st: dict, tickers: dict, extra: dict, tg) -> int:
     n = 0
     for u in updates:
         st["tg_offset"] = u["update_id"] + 1
+        cm = u.get("my_chat_member")
+        if cm:                                    # бота добавили в канал/группу или убрали оттуда
+            chat = cm.get("chat", {})
+            status = cm.get("new_chat_member", {}).get("status")
+            who = str(cm.get("from", {}).get("id", ""))
+            if chat.get("type") == "channel" and who == owner:
+                if status == "administrator":
+                    tg.send(f"📢 Меня добавили админом в канал «{esc(chat.get('title', ''))}».\n"
+                            f"Его id: <code>{chat.get('id')}</code>\n"
+                            f"Впиши это число в секрет TELEGRAM_CHANNEL_ID на GitHub, "
+                            f"и я начну публиковать туда статистику.")
+                elif status in ("left", "kicked", "member"):
+                    tg.send(f"Меня убрали из админов канала «{esc(chat.get('title', ''))}», "
+                            f"публиковать туда больше не смогу.")
+            continue
         msg = u.get("message") or {}
         chat = str(msg.get("chat", {}).get("id", ""))
         text = msg.get("text")
