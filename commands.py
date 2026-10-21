@@ -22,17 +22,43 @@ HELP = (
     f"☀️ утреннюю сводку рынка в {C.DIGEST_HOUR}:00\n"
     + ("🧪 экспериментальные сигналы на 4h и их результаты\n" if C.SIGNALS_ENABLED else "")
     + "\n"
-    "<b>Команды:</b>\n"
-    "/price btc eth: цены и изменения\n"
-    "/alert btc 65000: сообщу, когда цена дойдёт\n"
+    "<b>Команды</b> (все есть в кнопке «Меню» слева от поля ввода):\n"
+    "/price: цены топ-10 монет\n"
+    "/price btc eth: цены конкретных монет\n"
+    "/alert btc 65000: сообщу, когда цена дойдёт до уровня\n"
     "/alerts: мои алерты\n"
     "/del 3: удалить алерт №3\n"
     "/top: лидеры роста и падения за 24ч\n"
     "/digest: сводка рынка прямо сейчас\n"
-    "/stats: статистика экспериментальных сигналов\n"
-    "/mute и /unmute: выключить/включить сканер рынка\n\n"
+    + ("/stats: статистика экспериментальных сигналов\n" if C.SIGNALS_ENABLED else "")
+    + "/mute и /unmute: выключить/включить сканер рынка\n\n"
     "⏱ Я просыпаюсь раз в 15 минут, поэтому отвечаю с задержкой до 15 минут."
 )
+
+
+# Меню команд в Telegram: (команда, описание до 256 символов)
+MENU = [
+    ("help", "Инструкция: что умеет бот"),
+    ("price", "Цены. Без монет: топ-10. Пример: /price btc eth"),
+    ("alert", "Сообщить, когда цена дойдёт. Пример: /alert btc 65000"),
+    ("alerts", "Список моих ценовых алертов"),
+    ("del", "Удалить алерт по номеру. Пример: /del 3"),
+    ("top", "Лидеры роста и падения за 24 часа"),
+    ("digest", "Сводка рынка прямо сейчас"),
+    ("mute", "Выключить уведомления сканера рынка"),
+    ("unmute", "Включить уведомления сканера рынка"),
+]
+if C.SIGNALS_ENABLED:
+    MENU.insert(7, ("stats", "Статистика экспериментальных сигналов"))
+MENU_VERSION = 2   # увеличь, если меняешь MENU, чтобы бот заново отправил его в Telegram
+
+DESCRIPTION = (
+    "Помощник трейдера: следит за рынком Binance и пишет, когда происходит важное.\n\n"
+    "⚡ резкие движения цены\n📊 всплески объёма\n🚀 пробои максимумов и минимумов\n"
+    "🔔 твои ценовые алерты\n☀️ утренняя сводка рынка\n\n"
+    "Команды в кнопке «Меню». Отвечаю с задержкой до 15 минут. Не финансовая рекомендация."
+)
+SHORT_DESCRIPTION = "Следит за рынком Binance: резкие движения, объёмы, пробои уровней, алерты, сводка."
 
 
 def _price_lines(symbols: list[str], tickers: dict) -> str:
@@ -70,13 +96,16 @@ def handle_message(text: str, st: dict, tickers: dict, extra: dict) -> str | Non
 
     if cmd == "/price":
         if not args:
-            return "Напиши так: /price btc eth"
+            return ("💰 <b>Топ-10 по объёму</b>\n" + _price_lines(bd.top_symbols(C.TOP_N, tickers), tickers)
+                    + "\n\nКонкретные монеты: /price btc eth")
         syms = [s for s in (bd.normalize_symbol(a) for a in args[:10]) if s]
         return _price_lines(syms, tickers) or "Не нашёл таких монет на Binance (пары к USDT)."
 
     if cmd == "/alert":
         if len(args) != 2:
-            return "Напиши так: /alert btc 65000"
+            return ("🔔 Чтобы поставить алерт, напиши монету и цену:\n"
+                    "<code>/alert btc 65000</code>\n\n"
+                    "Если цена выше текущей, сообщу, когда монета поднимется до неё, если ниже, когда опустится.")
         sym = bd.normalize_symbol(args[0])
         if not sym:
             return f"Не нашёл монету «{esc(args[0])}» на Binance."
@@ -109,7 +138,7 @@ def handle_message(text: str, st: dict, tickers: dict, extra: dict) -> str | Non
 
     if cmd == "/del":
         if not args or not args[0].isdigit():
-            return "Напиши так: /del 3"
+            return "Напиши номер алерта: <code>/del 3</code>\nНомера видно в /alerts"
         aid = int(args[0])
         before = len(st["alerts"])
         st["alerts"] = [a for a in st["alerts"] if a["id"] != aid]

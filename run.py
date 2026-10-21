@@ -70,6 +70,14 @@ def _run(st: dict, tg, dry: bool):
     digest_now = lambda: digest.build(top, tickers, journal.stats_text(st) if C.SIGNALS_ENABLED else None)
     extra = {"digest": digest_now, "stats": lambda: journal.stats_text(st)}
 
+    if not dry and st.get("menu_version") != commands.MENU_VERSION:
+        try:                                  # меню и описание бота отправляем в Telegram один раз
+            tg.setup_profile(commands.MENU, commands.DESCRIPTION, commands.SHORT_DESCRIPTION)
+            st["menu_version"] = commands.MENU_VERSION
+            print("Меню команд обновлено")
+        except Exception as e:
+            print(f"[меню] {e}")
+
     if not dry:
         n = _step("команды", lambda: commands.process_commands(st, tickers, extra, tg))
         print("Ответов на команды:", n)

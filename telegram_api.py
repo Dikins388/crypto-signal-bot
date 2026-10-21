@@ -45,6 +45,23 @@ def get_updates(offset: int) -> list[dict]:
     return data["result"]
 
 
+def call(method: str, payload: dict) -> dict:
+    token, _ = _creds()
+    r = requests.post(API.format(token=token, method=method), json=payload, timeout=20)
+    data = r.json()
+    if not data.get("ok"):
+        raise RuntimeError(f"{method}: {data}")
+    return data
+
+
+def setup_profile(commands: list[tuple[str, str]], description: str, short: str) -> None:
+    """Меню команд (кнопка «Меню» слева от поля ввода) и описание бота."""
+    call("setMyCommands", {"commands": [{"command": c, "description": d} for c, d in commands]})
+    call("setChatMenuButton", {"menu_button": {"type": "commands"}})
+    call("setMyDescription", {"description": description})
+    call("setMyShortDescription", {"short_description": short})
+
+
 def own_chat_id() -> str:
     return _creds()[1]
 
