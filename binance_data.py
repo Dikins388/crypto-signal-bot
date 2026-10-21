@@ -14,7 +14,8 @@ _working_base: str | None = None
 
 INTERVAL_MS = {
     "1m": 60_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000,
-    "1h": 3_600_000, "2h": 7_200_000, "4h": 14_400_000, "1d": 86_400_000,
+    "1h": 3_600_000, "2h": 7_200_000, "4h": 14_400_000, "6h": 21_600_000,
+    "12h": 43_200_000, "1d": 86_400_000,
 }
 
 
@@ -47,26 +48,55 @@ def _get(path: str, params: dict | None = None):
     raise BinanceUnavailable("Binance недоступен: " + " | ".join(errors[-5:]))
 
 
-def top_symbols(n: int = config.TOP_N) -> list[str]:
-    if config.SYMBOLS:
-        return list(config.SYMBOLS)
-    tickers = _get("/api/v3/ticker/24hr")
-    info = _get("/api/v3/exchangeInfo", {"permissions": "SPOT"})
-    trading = {
-        s["symbol"] for s in info["symbols"]
-        if s["status"] == "TRADING" and s["quoteAsset"] == config.QUOTE
-    }
-    rows = []
-    for t in tickers:
+_trading_cache: set[str] | None = None
+
+
+def trading_symbols() -> set[str]:
+    """Все пары к USDT, которые сейчас торгуются."""
+    global _trading_cache
+    if _trading_cache is None:
+        info = _get("/api/v3/exchangeInfo", {"permissions": "SPOT"})
+        _trading_cache = {
+            s["symbol"] for s in info["symbols"]
+            if s["status"] == "TRADING" and s["quoteAsset"] == config.QUOTE
+        }
+    return _trading_cache
+
+
+def tickers_24h() -> dict[str, dict]:
+    """Статистика за 24 часа по всем ликвидным парам к USDT: {symbol: {...}}."""
+    trading = trading_symbols()
+    out = {}
+    for t in _get("/api/v3/ticker/24hr"):
         sym = t["symbol"]
         if sym not in trading:
             continue
         base = sym[: -len(config.QUOTE)]
         if base in config.EXCLUDE_BASES or base.endswith(("UP", "DOWN", "BULL", "BEAR")):
             continue
-        rows.append((float(t["quoteVolume"]), sym))
-    rows.sort(reverse=True)
-    return [s for _, s in rows[:n]]
+        out[sym] = {
+            "price": float(t["lastPrice"]),
+            "change_pct": float(t["priceChangePercent"]),
+            "high": float(t["highPrice"]),
+            "low": float(t["lowPrice"]),
+            "quote_volume": float(t["quoteVolume"]),
+        }
+    return out
+
+
+def top_symbols(n: int = config.TOP_N, tickers: dict | None = None) -> list[str]:
+    if config.SYMBOLS:
+        return list(config.SYMBOLS)[:n]
+    tickers = tickers or tickers_24h()
+    return [s for s, _ in sorted(tickers.items(), key=lambda kv: -kv[1]["quote_volume"])[:n]]
+
+
+def normalize_symbol(text: str) -> str | None:
+    """'btc', 'BTCUSDT', 'btc/usdt' -> 'BTCUSDT', если такая пара торгуется."""
+    s = text.upper().replace("/", "").replace("-", "").strip()
+    if not s.endswith(config.QUOTE):
+        s += config.QUOTE
+    return s if s in trading_symbols() else None
 
 
 def klines(symbol: str, interval: str, start_ms: int | None = None,

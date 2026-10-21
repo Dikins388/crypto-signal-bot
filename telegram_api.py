@@ -33,6 +33,22 @@ def send(text: str) -> None:
         time.sleep(0.5)
 
 
+def get_updates(offset: int) -> list[dict]:
+    """Новые сообщения боту (с момента offset). Бот не висит онлайн, а забирает их при запуске."""
+    token, _ = _creds()
+    r = requests.get(API.format(token=token, method="getUpdates"),
+                     params={"offset": offset, "timeout": 0,
+                             "allowed_updates": '["message"]'}, timeout=20)
+    data = r.json()
+    if not data.get("ok"):
+        raise RuntimeError(f"getUpdates: {data}")
+    return data["result"]
+
+
+def own_chat_id() -> str:
+    return _creds()[1]
+
+
 def send_document(path: str, caption: str = "") -> None:
     token, chat = _creds()
     with open(path, "rb") as f:

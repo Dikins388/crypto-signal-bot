@@ -114,9 +114,12 @@ def equity_curve(tr: pd.DataFrame, risk: float = 0.01) -> pd.Series:
 def load(symbol: str, days: int):
     now = int(time.time() * 1000)
     start = now - days * DAY_MS
-    e = bd.drop_unclosed(bd.klines(symbol, C.TF_ENTRY, start - 7 * DAY_MS, now))
-    m = bd.drop_unclosed(bd.klines(symbol, C.TF_MID, start - 30 * DAY_MS, now))
-    t = bd.drop_unclosed(bd.klines(symbol, C.TF_TREND, start - 150 * DAY_MS, now))
+    # Запас истории до начала периода, чтобы индикаторы успели «прогреться»
+    warm = lambda tf, bars: int(bars * bd.INTERVAL_MS[tf] / DAY_MS) + 3
+    e = bd.drop_unclosed(bd.klines(symbol, C.TF_ENTRY, start - warm(C.TF_ENTRY, 300) * DAY_MS, now))
+    m = bd.drop_unclosed(bd.klines(symbol, C.TF_MID, start - warm(C.TF_MID, 400) * DAY_MS, now))
+    t = m if C.TF_TREND == C.TF_MID else bd.drop_unclosed(
+        bd.klines(symbol, C.TF_TREND, start - warm(C.TF_TREND, 400) * DAY_MS, now))
     return e, m, t, pd.Timestamp(start, unit="ms", tz="UTC")
 
 
@@ -134,7 +137,7 @@ def run(symbols: list[str], days: int, out_dir: str = "reports",
         except Exception as ex:                      # одна монета не должна валить весь отчёт
             print(f"  пропуск: {ex}")
             continue
-        if len(e) < 500 or len(t) < 250:
+        if len(e) < 300 or len(t) < 250:
             print("  слишком мало истории, пропуск")
             continue
         df = compute_signals(build_features(e, m, t))
