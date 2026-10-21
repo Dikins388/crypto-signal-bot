@@ -88,6 +88,66 @@ def find_rockets(tickers: dict) -> list[dict]:
     return out
 
 
+def find_dumps(tickers: dict) -> list[dict]:
+    """Монеты, которые за 24 часа упали от вершины до последующего дна на DUMP_MIN_PCT%+."""
+    keep = 1 - C.DUMP_MIN_PCT / 100
+    cands = [s for s, t in tickers.items()
+             if t["quote_volume"] >= C.ROCKET_MIN_QUOTE_VOLUME and t["high"] > 0
+             and t["low"] / t["high"] <= keep]           # иначе обвалом быть не мог
+    out = []
+    for sym in cands:
+        try:
+            k = bd.klines(sym, "15m", limit=97)
+        except Exception as e:
+            print(f"[обвалы] {sym}: {e}")
+            continue
+        if len(k) < 2:
+            continue
+        lows, highs = k["low"].to_numpy(), k["high"].to_numpy()
+        run_max = np.maximum.accumulate(highs)
+        ratio = lows / run_max
+        j = int(np.argmin(ratio))
+        if ratio[j] > keep:
+            continue
+        i = int(np.argmax(highs[: j + 1]))
+        price = tickers[sym]["price"]
+        out.append({
+            "symbol": sym,
+            "drop": (1 - ratio[j]) * 100,
+            "minutes": (j - i + 1) * 15,
+            "peak": float(run_max[j]), "low": float(lows[j]),
+            "from_low": (price / lows[j] - 1) * 100,
+            "vs_peak": (price / run_max[j] - 1) * 100,
+            "low_ago_min": (len(k) - 1 - j) * 15,
+        })
+    out.sort(key=lambda r: -r["drop"])
+    return out
+
+
+def dumps_block(dumps: list[dict], st: dict) -> list[str]:
+    now = time.time()
+    seen = {k: v for k, v in st.get("dumps_seen", {}).items() if now - v < 26 * 3600}
+    st["dumps_seen"] = seen
+    lines = [f"💥 <b>Обвалы за сутки</b> (падение от {C.DUMP_MIN_PCT}%, весь Binance)"]
+    if not dumps:
+        lines.append("Сейчас таких нет.")
+        return lines
+    for r in dumps[: C.ROCKETS_MAX_SHOWN]:
+        sym = r["symbol"]
+        new = sym not in seen
+        if new:
+            seen[sym] = now
+        tag = "🆕 " if new else ""
+        ago = "сейчас на дне" if r["low_ago_min"] < 15 else f"дно {_dur(r['low_ago_min'])} назад"
+        lines.append(
+            f"{tag}<b>{base(sym)}</b> -{r['drop']:.0f}% за {_dur(r['minutes'])} "
+            f"({fmt_price_short(r['peak'])} → {fmt_price_short(r['low'])})\n"
+            f"      {ago}, от дна {r['from_low']:+.0f}%, от пика {r['vs_peak']:+.0f}%")
+    if len(dumps) > C.ROCKETS_MAX_SHOWN:
+        lines.append(f"…и ещё {len(dumps) - C.ROCKETS_MAX_SHOWN}")
+    return lines
+
+
 def rockets_block(rockets: list[dict], st: dict) -> list[str]:
     now = time.time()
     # Помним, какие ракеты уже показывали, чтобы отмечать новые значком 🆕. Старше суток забываем.
@@ -113,7 +173,8 @@ def rockets_block(rockets: list[dict], st: dict) -> list[str]:
     return lines
 
 
-def build(symbols: list[str], tickers: dict, with_context: bool, rockets: list[dict], st: dict) -> str:
+def build(symbols: list[str], tickers: dict, with_context: bool, rockets: list[dict], st: dict,
+          dumps: list[dict] | None = None) -> str:
     now = now_kyiv()
     rows = [(s, tickers[s]) for s in symbols if s in tickers]
     lines = [f"📊 <b>Рынок на {now:%H:%M}</b> (Киев)",
@@ -129,8 +190,8 @@ def build(symbols: list[str], tickers: dict, with_context: bool, rockets: list[d
         hot = " ⚡" if h1 is not None and abs(h1) >= HOT_1H_PCT else ""
         lines.append(f"<b>{base(sym)}</b> {fmt_price_short(t['price'])}  "
                      f"{_num(h1)}  {_num(t['change_pct'])}{hot}")
-    lines += ["", *rockets_block(rockets, st), "",
-              f"⚡ больше {HOT_1H_PCT:g}% за час · 🆕 новая ракета",
+    lines += ["", *rockets_block(rockets, st), "", *dumps_block(dumps or [], st), "",
+              f"⚡ больше {HOT_1H_PCT:g}% за час · 🆕 появилась впервые",
               "<i>Данные Binance. Не финансовая рекомендация.</i>"]
     return "\n".join(lines)
 
@@ -144,7 +205,8 @@ def post(st: dict, symbols: list[str], tickers: dict, tg, rockets: list[dict] | 
     top = bd.top_symbols(C.CHANNEL_TOP_N, tickers)
     if rockets is None:
         rockets = find_rockets(tickers)
-    text = build(top, tickers, with_context, rockets, st)
+    dumps = find_dumps(tickers)
+    text = build(top, tickers, with_context, rockets, st, dumps)
     tg.send(text, chat_id=cid, silent=C.CHANNEL_SILENT)
     st["channel_last"] = time.time()
     if with_context:
