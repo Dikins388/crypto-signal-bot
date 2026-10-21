@@ -18,6 +18,7 @@ import commands
 import digest
 import journal
 import monitor
+import subscribers
 from util import esc, load_state, now_kyiv, save_state
 
 ERROR_ALERT_EVERY_H = 6
@@ -106,7 +107,15 @@ def _run(st: dict, tg, dry: bool):
         tg.send(msg)
     print(f"Отправлено сообщений: {len(out)}")
 
-    if _step("канал", lambda: channel.post(st, top, tickers, tg)):
+    # Ракеты считаем каждый запуск: для личных уведомлений подписчикам и для поста в канал
+    rockets = _step("ракеты", lambda: channel.find_rockets(tickers))
+    print(f"Ракет за сутки: {len(rockets)}")
+    if not dry:
+        n = _step("ракеты→подписчики",
+                  lambda: subscribers.alert_rockets(rockets, st, tg, str(tg.own_chat_id())))
+        print(f"Уведомлений о ракетах отправлено: {n or 0}")
+
+    if _step("канал", lambda: channel.post(st, top, tickers, tg, rockets)):
         print("Пост в канал опубликован")
 
 

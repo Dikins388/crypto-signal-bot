@@ -11,6 +11,7 @@ import pandas as pd
 
 import binance_data as bd
 import config as C
+import subscribers
 from util import arrow, base, esc, fmt_money, fmt_pct, fmt_price, link
 
 HELP = (
@@ -31,7 +32,8 @@ HELP = (
     "/top: лидеры роста и падения за 24ч\n"
     "/digest: сводка рынка прямо сейчас\n"
     + ("/stats: статистика экспериментальных сигналов\n" if C.SIGNALS_ENABLED else "")
-    + "/mute и /unmute: выключить/включить сканер рынка\n\n"
+    + "/mute и /unmute: выключить/включить сканер рынка\n"
+    "/subs: подписчики на ракеты, /approve и /unsub: разрешить или отписать\n\n"
     "⏱ Я просыпаюсь раз в 10 минут, поэтому отвечаю с задержкой до 10 минут."
 )
 
@@ -190,10 +192,20 @@ def process_commands(st: dict, tickers: dict, extra: dict, tg) -> int:
         msg = u.get("message") or {}
         chat = str(msg.get("chat", {}).get("id", ""))
         text = msg.get("text")
-        if not text or chat != owner:
-            continue                              # чужим не отвечаем
+        if not text:
+            continue
+        if chat != owner:                         # не владелец: только подписка на ракеты
+            try:
+                subscribers.handle_guest(msg, st, tg, owner)
+            except Exception as e:
+                print(f"[гость] {e}")
+            continue
         try:
-            reply = handle_message(text, st, tickers, extra)
+            parts = text.strip().split()
+            reply = subscribers.owner_command(parts[0].lower().split("@")[0], parts[1:], st, tg) \
+                if parts else None
+            if reply is None:
+                reply = handle_message(text, st, tickers, extra)
         except Exception as e:                    # одна кривая команда не должна ронять бота
             reply = f"Ошибка при обработке команды: {esc(e)}"
         if reply:

@@ -135,14 +135,15 @@ def build(symbols: list[str], tickers: dict, with_context: bool, rockets: list[d
     return "\n".join(lines)
 
 
-def post(st: dict, symbols: list[str], tickers: dict, tg) -> bool:
+def post(st: dict, symbols: list[str], tickers: dict, tg, rockets: list[dict] | None = None) -> bool:
     cid = channel_id()
     if not cid or not due(st):
         return False
     # Тренд BTC и индекс страха меняются медленно: показываем их раз в час, чтобы пост был короче
     with_context = time.time() - st.get("channel_context_last", 0) >= 55 * 60
     top = bd.top_symbols(C.CHANNEL_TOP_N, tickers)
-    rockets = find_rockets(tickers)
+    if rockets is None:
+        rockets = find_rockets(tickers)
     text = build(top, tickers, with_context, rockets, st)
     tg.send(text, chat_id=cid, silent=C.CHANNEL_SILENT)
     st["channel_last"] = time.time()
