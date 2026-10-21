@@ -1,10 +1,11 @@
-name: Бот каждые 15 минут
+name: Бот каждые 10 минут
 
 on:
   schedule:
-    # Не ставим :00/:15/:30/:45: на эти минуты у GitHub пик нагрузки, запуски задерживаются и теряются
-    - cron: "7,22,37,52 * * * *"
-  workflow_dispatch:            # кнопка ручного запуска во вкладке Actions
+    # Каждые 10 минут на «тихих» минутах. На :00/:15/:30/:45 у GitHub пик нагрузки,
+    # запуски там задерживаются и теряются. Время UTC.
+    - cron: "3,13,23,33,43,53 * * * *"
+  workflow_dispatch:            # кнопка ручного запуска (и для внешнего будильника)
 
 concurrency:
   group: bot
@@ -13,7 +14,7 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
 
