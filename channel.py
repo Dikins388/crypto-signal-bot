@@ -4,8 +4,7 @@
   1) монеты со всего спота Binance, сдвинувшиеся за сутки на MOVE_BLOCK_PCT%+ (в любую сторону);
   2) ракеты: рост от дна до последующей вершины на ROCKET_MIN_PCT%+;
   3) обвалы: падение от вершины до последующего дна на DUMP_MIN_PCT%+;
-  4) статистика топ-N монет по объёму.
-Каждый блок оформлен таблицей «монета · час · сутки» моноширинным шрифтом.
+Строки в порядке «монета · час · сутки», рост 🟢, падение 🔴.
 """
 from __future__ import annotations
 
@@ -18,9 +17,6 @@ import numpy as np
 import binance_data as bd
 import config as C
 from util import base, now_kyiv
-
-NAME_W, COL_W = 10, 8      # ширина колонок таблицы (символов); на телефоне строка ~26 символов
-
 
 def channel_id() -> str | None:
     cid = os.environ.get("TELEGRAM_CHANNEL_ID", "").strip()
@@ -107,42 +103,30 @@ def find_movers(tickers: dict) -> list[dict]:
 # --- Оформление ------------------------------------------------------------
 
 def _pct(x: float | None) -> str:
+    """🟢 рост / 🔴 падение / ⚪ почти на месте, без знаков + и −."""
     if x is None:
-        return "—"
-    return f"{x:+.0f}%" if abs(x) >= 100 else f"{x:+.1f}%"
-
-
-def _row(name: str, a: str, b: str) -> str:
-    return f"{name[:NAME_W]:<{NAME_W}}{a:>{COL_W}}{b:>{COL_W}}"
-
-
-def table(rows: list[tuple[str, float | None, float | None]], col_b: str = "сутки") -> str:
-    lines = [_row("Монета", "час", col_b), "─" * (NAME_W + 2 * COL_W)]
-    lines += [_row(n, _pct(a), _pct(b)) for n, a, b in rows]
-    return "<pre>" + html.escape("\n".join(lines)) + "</pre>"
+        return "⚪ —"
+    dot = "🟢" if x >= 0.05 else "🔴" if x <= -0.05 else "⚪"
+    v = abs(x)
+    return f"{dot} {v:.0f}%" if v >= 100 else f"{dot} {v:.1f}%"
 
 
 def block(title: str, items: list[dict], key: str, empty: str) -> list[str]:
+    """Блок обычным (не моноширинным) шрифтом: он крупнее и в нём видны цветные шарики.
+    Порядок в строке как в таблице: монета · час · сутки."""
     lines = [title]
     if not items:
         return lines + [empty]
+    lines.append("<i>монета · час · сутки</i>")
     shown = items[: C.BLOCK_MAX_SHOWN]
-    lines.append(table([(base(m["symbol"]), m["h1"], m[key]) for m in shown]))
+    for m in shown:
+        lines.append(f"<b>{html.escape(base(m['symbol']))}</b>   {_pct(m['h1'])}   {_pct(m[key])}")
     if len(items) > len(shown):
         lines.append(f"…и ещё {len(items) - len(shown)}")
     return lines
 
 
-def change_1h(sym: str, price: float) -> float | None:
-    try:
-        k = bd.klines(sym, "5m", limit=13)       # ~час назад: открытие самой старой из 13 пятиминуток
-        return (price / k["open"].iloc[0] - 1) * 100 if len(k) else None
-    except Exception as e:
-        print(f"[канал] {sym}: {e}")
-        return None
-
-
-def build(top: list[str], tickers: dict) -> str:
+def build(tickers: dict) -> str:
     now = now_kyiv()
     rockets = find_rockets(tickers)
     for r in rockets:
@@ -159,11 +143,7 @@ def build(top: list[str], tickers: dict) -> str:
     lines.append("")
     lines += block(f"💥 <b>Обвалы {C.DUMP_MIN_PCT}%+</b>", dumps, "drop_signed",
                    f"Монет с обвалом {C.DUMP_MIN_PCT}+% сегодня нет.")
-    lines.append("")
-    rows = [(base(s), change_1h(s, tickers[s]["price"]), tickers[s]["change_pct"])
-            for s in top if s in tickers]
-    lines += [f"📊 <b>Топ-{len(rows)} Binance</b>", table(rows)]
-    lines.append("<i>Данные Binance. Не финансовая рекомендация.</i>")
+    lines += ["", "<i>Данные Binance. Не финансовая рекомендация.</i>"]
     return "\n".join(lines)
 
 
@@ -171,7 +151,6 @@ def post(st: dict, symbols: list[str], tickers: dict, tg, rockets: list[dict] | 
     cid = channel_id()
     if not cid or not due(st):
         return False
-    top = bd.top_symbols(C.CHANNEL_TOP_N, tickers)
-    tg.send(build(top, tickers), chat_id=cid, silent=C.CHANNEL_SILENT)
+    tg.send(build(tickers), chat_id=cid, silent=C.CHANNEL_SILENT)
     st["channel_last"] = time.time()
     return True
