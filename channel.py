@@ -1,6 +1,7 @@
 """Публикация статистики рынка в канал раз в CHANNEL_POST_EVERY_MIN минут.
 
-Пост: настроение рынка, топ-N монет по объёму (цена, за 1ч, за 24ч),
+Пост: настроение рынка (по самым торгуемым), до CHANNEL_TOP_N монет со всего Binance,
+сдвинувшихся за 24ч на MOVER_MIN_PCT%+ (цена, за 1ч, за 24ч), блок обвалов,
 внизу «ракеты»: монеты со всего Binance, которые за последние сутки
 выросли от дна до вершины на ROCKET_MIN_PCT% и больше.
 """
@@ -49,6 +50,16 @@ def _num(x: float | None) -> str:
 def _dur(minutes: float) -> str:
     h, m = divmod(int(round(minutes / 15) * 15), 60)
     return f"{h}ч {m:02d}м" if h else f"{m}м"
+
+
+def top_movers(tickers: dict) -> list[str]:
+    """Монеты со всего спота, изменившиеся за 24ч на MOVER_MIN_PCT%+ в любую сторону.
+    Сортировка по силе движения, не больше CHANNEL_TOP_N, мёртвые монеты отсекаются по обороту."""
+    movers = [(s, t) for s, t in tickers.items()
+              if t["quote_volume"] >= C.ROCKET_MIN_QUOTE_VOLUME
+              and abs(t["change_pct"]) >= C.MOVER_MIN_PCT]
+    movers.sort(key=lambda x: -abs(x[1]["change_pct"]))
+    return [s for s, _ in movers[: C.CHANNEL_TOP_N]]
 
 
 def find_rockets(tickers: dict) -> list[dict]:
@@ -174,17 +185,21 @@ def rockets_block(rockets: list[dict], st: dict) -> list[str]:
 
 
 def build(symbols: list[str], tickers: dict, with_context: bool, rockets: list[dict], st: dict,
-          dumps: list[dict] | None = None) -> str:
+          dumps: list[dict] | None = None, movers: list[str] | None = None) -> str:
     now = now_kyiv()
-    rows = [(s, tickers[s]) for s in symbols if s in tickers]
+    # Настроение считаем по самым торгуемым монетам, а в таблицу идут только сильные движения
+    mood_rows = [tickers[s] for s in symbols if s in tickers]
+    rows = [(s, tickers[s]) for s in (movers if movers is not None else symbols) if s in tickers]
     lines = [f"📊 <b>Рынок на {now:%H:%M}</b> (Киев)",
-             market_mood([t["change_pct"] for _, t in rows]), ""]
+             market_mood([t["change_pct"] for t in mood_rows]), ""]
     if with_context:
         for extra in (btc_trend(), fear_greed()):
             if extra:
                 lines.append(extra)
         lines.append("")
-    lines.append(f"<b>Топ-{len(rows)}</b> · цена · % за 1ч · % за 24ч")
+    lines.append(f"<b>Движение за сутки от {C.MOVER_MIN_PCT}%</b> · цена · % за 1ч · % за 24ч")
+    if not rows:
+        lines.append("Сейчас таких нет.")
     for sym, t in rows:
         h1 = change_1h(sym, t["price"])
         hot = " ⚡" if h1 is not None and abs(h1) >= HOT_1H_PCT else ""
@@ -206,7 +221,8 @@ def post(st: dict, symbols: list[str], tickers: dict, tg, rockets: list[dict] | 
     if rockets is None:
         rockets = find_rockets(tickers)
     dumps = find_dumps(tickers)
-    text = build(top, tickers, with_context, rockets, st, dumps)
+    movers = top_movers(tickers)
+    text = build(top, tickers, with_context, rockets, st, dumps, movers)
     tg.send(text, chat_id=cid, silent=C.CHANNEL_SILENT)
     st["channel_last"] = time.time()
     if with_context:
