@@ -89,8 +89,10 @@ def _run(st: dict, tg, dry: bool):
     if C.SCAN_ENABLED and not st["muted"]:
         out += _step("сканер", lambda: monitor.scan(watch, tickers, st))
     if C.SIGNALS_ENABLED:
-        out += _step("дневник", lambda: journal.update_open(st))
-        out += _step("сигналы", lambda: journal.check_new_signals(top, st))
+        sig_msgs = _step("дневник", lambda: journal.update_open(st))
+        sig_msgs += _step("сигналы", lambda: journal.check_new_signals(top, st))
+        if not C.SIGNALS_TO_CHANNEL:          # иначе сигналы и итоги видны в блоке «Эксперимент» в канале
+            out += sig_msgs
 
     now = now_kyiv()
     today = now.strftime("%Y-%m-%d")

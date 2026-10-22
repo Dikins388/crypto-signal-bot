@@ -13,11 +13,12 @@ import os
 import time
 
 import numpy as np
+import pandas as pd
 
 import binance_data as bd
 import config as C
 from digest import fear_greed
-from util import base, now_kyiv
+from util import base, fmt_price_short, now_kyiv
 
 def channel_id() -> str | None:
     cid = os.environ.get("TELEGRAM_CHANNEL_ID", "").strip()
@@ -127,7 +128,42 @@ def block(title: str, items: list[dict], key: str, empty: str) -> list[str]:
     return lines
 
 
-def build(tickers: dict) -> str:
+def _when(ms: int) -> str:
+    return pd.Timestamp(ms, unit="ms", tz="UTC").tz_convert(C.TIMEZONE).strftime("%d.%m %H:%M")
+
+
+def experiment_block(st: dict | None) -> list[str]:
+    """Нижний блок: открытые сделки стратегии 4h и итоги недавно закрытых, плюс общий счёт."""
+    if not C.SIGNALS_ENABLED or not C.SIGNALS_TO_CHANNEL or st is None:
+        return []
+    j = st.get("journal", {})
+    opened, closed = j.get("open", []), j.get("closed", [])
+    lines = ["", f"🧪 <b>Эксперимент</b> · сигналы на свечах {C.TF_ENTRY}",
+             "<i>проверка стратегии на живом рынке, не рекомендация</i>"]
+    for t in opened:
+        side = "🟢 <b>ПОКУПКА</b>" if t["side"] == 1 else "🔴 <b>ПРОДАЖА</b>"
+        lines.append(f"{side} {html.escape(base(t['symbol']))} с {_when(t['entry_ms'])}\n"
+                     f"вход {fmt_price_short(t['entry'])} · стоп {fmt_price_short(t['sl'])} · "
+                     f"тейк {fmt_price_short(t['tp'])}")
+    recent_ms = (time.time() - C.EXPERIMENT_CLOSED_SHOW_H * 3600) * 1000
+    for t in [t for t in closed if t.get("exit_ms", 0) >= recent_ms][-5:]:
+        icon = "✅" if t["net_pct"] > 0 else "❌"
+        side = "покупка" if t["side"] == 1 else "продажа"
+        dot = "🟢" if t["net_pct"] > 0 else "🔴"
+        lines.append(f"{icon} {html.escape(base(t['symbol']))} {side} закрыта ({t['reason']}): "
+                     f"{dot} {abs(t['net_pct']):.1f}%")
+    if not opened and not any(t.get("exit_ms", 0) >= recent_ms for t in closed):
+        lines.append("Открытых сделок нет. Новый сигнал появится здесь, как только сработает стратегия.")
+    if closed:
+        net = [t["net_pct"] for t in closed]
+        wins = sum(1 for x in net if x > 0)
+        total = sum(net)
+        lines.append(f"Счёт эксперимента: сделок {len(net)}, прибыльных {100 * wins / len(net):.0f}%, "
+                     f"сумма {'🟢' if total > 0 else '🔴'} {abs(total):.1f}%")
+    return lines
+
+
+def build(tickers: dict, st: dict | None = None) -> str:
     now = now_kyiv()
     rockets = find_rockets(tickers)
     for r in rockets:
@@ -148,6 +184,7 @@ def build(tickers: dict) -> str:
     lines.append("")
     lines += block(f"💥 <b>Обвалы {C.DUMP_MIN_PCT}%+</b>", dumps, "drop_signed",
                    f"Монет с обвалом {C.DUMP_MIN_PCT}+% сегодня нет.")
+    lines += experiment_block(st)
     lines += ["", "<i>Данные Binance. Не финансовая рекомендация.</i>"]
     return "\n".join(lines)
 
@@ -156,6 +193,6 @@ def post(st: dict, symbols: list[str], tickers: dict, tg, rockets: list[dict] | 
     cid = channel_id()
     if not cid or not due(st):
         return False
-    tg.send(build(tickers), chat_id=cid, silent=C.CHANNEL_SILENT)
+    tg.send(build(tickers, st), chat_id=cid, silent=C.CHANNEL_SILENT)
     st["channel_last"] = time.time()
     return True

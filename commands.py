@@ -52,7 +52,7 @@ MENU = [
 ]
 if C.SIGNALS_ENABLED:
     MENU.insert(7, ("stats", "Статистика экспериментальных сигналов"))
-MENU_VERSION = 3   # увеличь, если меняешь MENU, чтобы бот заново отправил его в Telegram
+MENU_VERSION = 4   # увеличь, если меняешь MENU, чтобы бот заново отправил его в Telegram
 
 DESCRIPTION = (
     "Помощник трейдера: следит за рынком Binance и пишет, когда происходит важное.\n\n"
