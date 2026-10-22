@@ -16,6 +16,7 @@ import numpy as np
 
 import binance_data as bd
 import config as C
+from digest import fear_greed
 from util import base, now_kyiv
 
 def channel_id() -> str | None:
@@ -134,7 +135,11 @@ def build(tickers: dict) -> str:
     dumps = find_dumps(tickers)
     for d in dumps:
         d["drop_signed"] = -d["drop"]
-    lines = [f"📊 <b>Крипто НЮХ · {now:%H:%M}</b> (Киев)", ""]
+    lines = [f"📊 <b>Крипто НЮХ · {now:%H:%M}</b> (Киев)"]
+    fg = fear_greed()                    # индекс страха и жадности (alternative.me), если доступен
+    if fg:
+        lines.append(fg)
+    lines.append("")
     lines += block(f"📈 <b>Движение {C.MOVE_BLOCK_PCT}%+ за сутки</b>", find_movers(tickers), "move",
                    f"Монет с движением {C.MOVE_BLOCK_PCT}+% сегодня нет.")
     lines.append("")
