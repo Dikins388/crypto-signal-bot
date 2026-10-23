@@ -142,12 +142,13 @@ def to_frame(raw: list[list]) -> pd.DataFrame:
     df = pd.DataFrame(raw, columns=cols)
     if df.empty:
         return df
-    for c in ("open", "high", "low", "close", "volume", "quote_volume"):
+    for c in ("open", "high", "low", "close", "volume", "quote_volume", "tb_quote"):
         df[c] = df[c].astype(float)
     df["open_time"] = pd.to_datetime(df["open_time"], unit="ms", utc=True)
     df["close_time"] = pd.to_datetime(df["close_time"], unit="ms", utc=True)
     df = df.drop_duplicates("open_time").sort_values("open_time").reset_index(drop=True)
-    return df[["open_time", "open", "high", "low", "close", "volume", "close_time"]]
+    # quote_volume: оборот свечи в USDT; tb_quote: из него агрессивные покупки (покупатель брал по рынку)
+    return df[["open_time", "open", "high", "low", "close", "volume", "close_time", "quote_volume", "tb_quote"]]
 
 
 def drop_unclosed(df: pd.DataFrame) -> pd.DataFrame:
