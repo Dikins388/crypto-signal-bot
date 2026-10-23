@@ -89,13 +89,18 @@ def _run(st: dict, tg, dry: bool):
     if C.SCAN_ENABLED and not st["muted"]:
         out += _step("сканер", lambda: monitor.scan(watch, tickers, st))
     if C.SIGNALS_ENABLED:
-        sig_msgs = _step("дневник", lambda: journal.update_open(st))
+        if st.get("journal_epoch") != C.JOURNAL_EPOCH:   # обнуление дневника: старые сделки и счёт убираем
+            st["journal"] = {"open": [], "closed": [], "seen": [], "last_bar": {}, "seed_pending": True}
+            st["journal_epoch"] = C.JOURNAL_EPOCH
+            print("Дневник сделок обнулён")
+        sig_msgs = []
         if C.EXPERIMENT_MODE == "pump":       # точки входа по пампующим монетам, каждый запуск
             sig_msgs += _step("сигналы", lambda: journal.check_pump_signals(tickers, st))
-        else:                                 # старая стратегия 4h по всем ликвидным монетам
+        else:                                 # правило тренда 4h по всем монетам с оборотом от $1 млн
             universe = [s for s, t in sorted(tickers.items(), key=lambda kv: -kv[1]["quote_volume"])
                         if t["quote_volume"] >= C.SIGNAL_MIN_QUOTE_VOLUME]
             sig_msgs += _step("сигналы", lambda: journal.check_new_signals(universe, st))
+        sig_msgs += _step("дневник", lambda: journal.update_open(st))
         if not C.SIGNALS_TO_CHANNEL:          # иначе сигналы и итоги видны в блоке «Эксперимент» в канале
             out += sig_msgs
 

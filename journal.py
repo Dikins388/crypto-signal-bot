@@ -32,6 +32,7 @@ def check_new_signals(symbols: list[str], st: dict) -> list[str]:
     if j["last_bar"].get("all") == bar:
         return []
     msgs = []
+    seeding = bool(j.get("seed_pending"))
     seen = set(j["seen"])
     open_syms = {(t["symbol"]) for t in j["open"]}
     ok = True
@@ -49,7 +50,17 @@ def check_new_signals(symbols: list[str], st: dict) -> list[str]:
         if len(e) < 100 or len(t) < 60:
             continue
         df = compute_signals(build_features(e, m, t))
-        row = df.iloc[-1]
+        if seeding:
+            # Первый запуск после обнуления: берём последний сигнал за срок жизни сделки (5 дней),
+            # чтобы в канале сразу были сделки, открытые по правилу сейчас. Если она уже закрылась,
+            # update_open её тихо выкинет, в счёт она не пойдёт.
+            hits = df.iloc[-C.MAX_HOLD_BARS:]
+            hits = hits[hits["signal"] != 0]
+            if hits.empty:
+                continue
+            row = hits.iloc[-1]
+        else:
+            row = df.iloc[-1]
         side = int(row["signal"])
         if side == 0:
             continue
@@ -73,11 +84,15 @@ def check_new_signals(symbols: list[str], st: dict) -> list[str]:
             "flow_mult": None if pd.isna(row.get("flow_mult")) else round(float(row["flow_mult"]), 1),
             "buy_share": None if pd.isna(row.get("buy_share")) else round(float(row["buy_share"])),
         }
+        if seeding:
+            trade["seeded"] = True
         j["open"].append(trade)
         open_syms.add(sym)
         msgs.append(format_signal(trade, row))
     if ok:
         j["last_bar"]["all"] = bar
+        j.pop("seed_pending", None)
+    print(f"[сигналы 4h] монет: {len(symbols)}, открыто сделок: {len(j['open'])}")
     return msgs
 
 
@@ -137,8 +152,11 @@ def update_open(st: dict) -> list[str]:
         if exit_px is None:
             if len(k):
                 tr["checked_ms"] = int(k["open_time"].iloc[-1].value // 1_000_000)
+            tr.pop("seeded", None)
             still.append(tr)
             continue
+        if tr.get("seeded"):
+            continue                          # закрылась ещё до обнуления дневника: в счёт не идёт
         cost = tr.get("cost_pct", cost_default)
         net = s * (exit_px / tr["entry"] - 1) * 100 - cost
         done = {**tr, "exit": float(exit_px), "exit_ms": exit_ms, "reason": reason,
