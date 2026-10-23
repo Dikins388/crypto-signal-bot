@@ -12,7 +12,7 @@ MONITOR_TOP_N = 20         # за сколькими монетами следи
 QUOTE = "USDT"
 EXCLUDE_BASES = {
     "USDC", "FDUSD", "TUSD", "BUSD", "USDP", "DAI", "EUR", "EURI", "AEUR", "USDE",
-    "USD1", "PAXG", "WBTC", "WBETH", "BFUSD", "XUSD", "RLUSD", "PYUSD", "XAUT",
+    "USD1", "U", "PAXG", "WBTC", "WBETH", "BFUSD", "XUSD", "RLUSD", "PYUSD", "XAUT",
 }
 MIN_QUOTE_VOLUME = 20_000_000   # для «лидеров роста/падения»: отсекаем неликвид
 MOVERS_UNIVERSE = 40            # и смотрим только на 40 самых торгуемых монет, чтобы не ловить пампы мелочи
