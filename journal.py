@@ -13,6 +13,7 @@ import pandas as pd
 
 import binance_data as bd
 import config as C
+import pump_strategy as ps
 from strategy import build_features, compute_signals
 from util import base, fmt_pct, fmt_price, link
 
@@ -102,7 +103,7 @@ def update_open(st: dict) -> list[str]:
     """Проверяет открытые виртуальные сделки по 15-минутным свечам."""
     j = st["journal"]
     msgs, still = [], []
-    cost = 2 * (C.FEE + C.SLIPPAGE) * 100
+    cost_default = 2 * (C.FEE + C.SLIPPAGE) * 100
     for tr in j["open"]:
         sym, s = tr["symbol"], tr["side"]
         start = max(tr["entry_ms"], tr.get("checked_ms", 0))
@@ -114,7 +115,7 @@ def update_open(st: dict) -> list[str]:
             print(f"[journal] {sym}: {ex}")
             still.append(tr)
             continue
-        deadline = tr["entry_ms"] + C.MAX_HOLD_BARS * BAR_MS
+        deadline = tr.get("deadline_ms") or tr["entry_ms"] + C.MAX_HOLD_BARS * BAR_MS
         exit_px = reason = None
         exit_ms = None
         for r in k.itertuples():
@@ -138,6 +139,7 @@ def update_open(st: dict) -> list[str]:
                 tr["checked_ms"] = int(k["open_time"].iloc[-1].value // 1_000_000)
             still.append(tr)
             continue
+        cost = tr.get("cost_pct", cost_default)
         net = s * (exit_px / tr["entry"] - 1) * 100 - cost
         done = {**tr, "exit": float(exit_px), "exit_ms": exit_ms, "reason": reason,
                 "net_pct": net, "r": net / tr["risk_pct"]}
@@ -174,3 +176,56 @@ def stats_text(st: dict, since_ms: int | None = None, title: str = "Дневни
         lines.append("\nОткрыто сейчас: " + ", ".join(
             f"{base(t['symbol'])} {'↑' if t['side'] == 1 else '↓'}" for t in j["open"]))
     return "\n".join(lines)
+
+
+def check_pump_signals(tickers: dict, st: dict) -> list[str]:
+    """Каждый запуск (раз в 10 минут): ищем точки входа по монетам, которые сейчас пампятся."""
+    j = st["journal"]
+    need = 1 + C.PUMP_MIN_GAIN_PCT / 100
+    cands = [s for s, t in tickers.items()
+             if t["quote_volume"] >= C.PUMP_MIN_QUOTE_VOLUME and t["low"] > 0 and t["high"] / t["low"] >= need]
+    open_syms = {t["symbol"] for t in j["open"]}
+    cooldowns = j.setdefault("pump_cooldown", {})
+    now = time.time()
+    for key in [k for k, v in cooldowns.items() if v < now]:
+        cooldowns.pop(key)
+    found = 0
+    for sym in cands:
+        if sym in open_syms:
+            continue
+        try:
+            raw = bd.klines(sym, "15m", limit=ps.need_bars() + 4)
+        except bd.BinanceUnavailable:
+            raise
+        except Exception as ex:
+            print(f"[пампы] {sym}: {ex}")
+            continue
+        k = bd.drop_unclosed(raw)
+        if len(k) < ps.need_bars():
+            continue
+        sigs = ps.analyze(k, t_from=len(k) - 2)        # две последние закрытые свечи (будильник неточен)
+        if not sigs:
+            continue
+        sig = sigs[-1]
+        key = f"{sym}|{sig['side']}"
+        if key in cooldowns:
+            continue
+        row = k.iloc[sig["t"]]
+        nxt = raw[raw["open_time"] > row["open_time"]]
+        entry = float(nxt["open"].iloc[0]) if len(nxt) else float(row["close"])
+        entry_time = nxt["open_time"].iloc[0] if len(nxt) else row["close_time"]
+        entry_ms = int(entry_time.value // 1_000_000)
+        sl, tp = ps.entry_levels(sig, entry)
+        j["open"].append({
+            "symbol": sym, "side": sig["side"], "entry": entry, "entry_ms": entry_ms,
+            "sl": sl, "tp": tp, "risk_pct": abs(entry - sl) / entry * 100, "score": 0,
+            "deadline_ms": entry_ms + C.PUMP_MAX_HOLD_H * 3_600_000,
+            "cost_pct": 2 * (C.FEE + C.PUMP_SLIPPAGE) * 100, "kind": "pump",
+            **{x: sig[x] for x in ("gain", "pump_minutes", "from_peak", "mult", "mult1h",
+                                   "buy_share", "buy_share_1h")},
+        })
+        cooldowns[key] = now + C.PUMP_COOLDOWN_H * 3600
+        open_syms.add(sym)
+        found += 1
+    print(f"[пампы] монет в пампе: {len(cands)}, новых сигналов: {found}")
+    return []

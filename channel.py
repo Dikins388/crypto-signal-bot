@@ -142,7 +142,15 @@ def _when(ms: int) -> str:
 
 def _trade_line(t: dict) -> str:
     flow = ""
-    if t.get("flow_mult") is not None:
+    if t.get("kind") == "pump":
+        dur = _dur(t["pump_minutes"])
+        if t["side"] == 1:
+            flow = (f"\nпамп 🟢 {t['gain']:.0f}% за {dur} · деньги ×{t['mult']:.0f} к обычному, за час ×{t['mult1h']:.0f}"
+                    f"\nпокупки с начала пампа {t['buy_share']}%, за час {t['buy_share_1h']}%")
+        else:
+            flow = (f"\nпосле пампа 🟢 {t['gain']:.0f}% за {dur}, от вершины 🔴 {abs(t['from_peak']):.0f}%"
+                    f"\nпокупки в пампе {t['buy_share']}%, за последний час {t['buy_share_1h']}%")
+    elif t.get("flow_mult") is not None:
         flow = f"\nденьги за сутки ×{t['flow_mult']:.1f} к обычному · покупки {t['buy_share']}%"
     return (f"<b>{html.escape(base(t['symbol']))}</b> с {_when(t['entry_ms'])}\n"
             f"вход {fmt_price_short(t['entry'])} · стоп {fmt_price_short(t['sl'])} · "
@@ -175,8 +183,14 @@ def experiment_block(st: dict | None) -> list[str]:
     j = st.get("journal", {})
     opened, closed = j.get("open", []), j.get("closed", [])
     recent_ms = (time.time() - C.EXPERIMENT_CLOSED_SHOW_H * 3600) * 1000
-    lines = ["", f"🧪 <b>Эксперимент</b> · точки входа, свечи {C.TF_ENTRY}, все монеты",
-             "<i>тренд + MACD + приток денег; проверка стратегии, не рекомендация</i>", ""]
+    if C.EXPERIMENT_MODE == "pump":
+        head = ["", "🧪 <b>Эксперимент</b> · точки входа по пампам, все монеты Binance",
+                "<i>лонг: памп продолжается, деньги и покупатели давят; шорт: памп выдохся, давят продавцы. "
+                "Проверка стратегии, не рекомендация</i>", ""]
+    else:
+        head = ["", f"🧪 <b>Эксперимент</b> · точки входа, свечи {C.TF_ENTRY}, все монеты",
+                "<i>тренд + MACD + приток денег; проверка стратегии, не рекомендация</i>", ""]
+    lines = head
     lines += _side_section("🟢 <b>Лонг</b>", 1, opened, closed, recent_ms)
     lines.append("")
     lines += _side_section("🔴 <b>Шорт</b>", -1, opened, closed, recent_ms)
