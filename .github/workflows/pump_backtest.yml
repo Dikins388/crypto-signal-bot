@@ -1,0 +1,31 @@
+name: Проверка сигналов по пампам
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Сколько дней истории проверять"
+        default: "180"
+
+jobs:
+  pump-backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Проверка на истории
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python pump_backtest.py --days ${{ github.event.inputs.days || '180' }} --telegram
+      - name: Сохранить отчёт
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pump-report
+          path: reports_pump/
