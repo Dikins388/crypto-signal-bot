@@ -18,7 +18,7 @@ import pandas as pd
 import binance_data as bd
 import config as C
 from digest import fear_greed
-from util import base, fmt_money, fmt_price_short, now_kyiv
+from util import base, fmt_price_short, now_kyiv
 
 def channel_id() -> str | None:
     cid = os.environ.get("TELEGRAM_CHANNEL_ID", "").strip()
@@ -75,39 +75,9 @@ def scan_moves(tickers: dict) -> list[dict]:
             "peak_ago_min": (len(k) - 1 - j) * 15, "from_peak": (price / highs[j] - 1) * 100,
             # падение
             "drop": (1 - drop_r[q]) * 100, "drop_minutes": (q - p + 1) * 15,
-            # деньги в пампе (от дна до вершины) и кто давил
-            **_money_stats(k, i, j),
         })
     _cache.update(id=id(tickers), moves=out)
     return out
-
-
-def _money_stats(k, i: int, j: int) -> dict:
-    """Оборот за памп и доля агрессивных покупок: за весь памп и за последний час."""
-    if "quote_volume" not in k or "tb_quote" not in k:
-        return {}
-    qv, tb = k["quote_volume"].to_numpy(), k["tb_quote"].to_numpy()
-    w_qv, w_tb = qv[i: j + 1].sum(), tb[i: j + 1].sum()
-    l_qv, l_tb = qv[-4:].sum(), tb[-4:].sum()
-    return {
-        "money_in": float(w_qv),
-        "buy_share": float(w_tb / w_qv * 100) if w_qv > 0 else None,
-        "buy_share_1h": float(l_tb / l_qv * 100) if l_qv > 0 else None,
-    }
-
-
-def usual_hourly_volume(sym: str) -> float | None:
-    """Обычный оборот за час: медиана по часовым свечам за 7 дней ДО последних суток (без пампа)."""
-    try:
-        h = bd.klines(sym, "1h", limit=24 * 8)
-    except Exception as e:
-        print(f"[деньги] {sym}: {e}")
-        return None
-    base_part = h.iloc[:-24] if len(h) > 48 else None
-    if base_part is None or "quote_volume" not in base_part:
-        return None                                  # монета новая, сравнивать не с чем
-    med = float(np.median(base_part["quote_volume"].to_numpy()))
-    return med if med > 0 else None
 
 
 def find_rockets(tickers: dict) -> list[dict]:
@@ -158,47 +128,6 @@ def block(title: str, items: list[dict], key: str, empty: str) -> list[str]:
     return lines
 
 
-def _share(x: float | None) -> str:
-    if x is None:
-        return "—"
-    dot = "🟢" if x >= C.BUYERS_STRONG_PCT else "🔴" if x < 50 else "⚪"
-    return f"{dot} {x:.0f}%"
-
-
-def money_block(tickers: dict) -> list[str]:
-    """Нижний блок: по монетам, выросшим за сутки на MOVE_BLOCK_PCT%+, сколько денег зашло,
-    кто давил и за какой срок."""
-    if not C.MONEY_BLOCK:
-        return []
-    pumps = sorted((m for m in scan_moves(tickers)
-                    if m["rise"] >= C.MOVE_BLOCK_PCT and m.get("money_in")),
-                   key=lambda m: -m["rise"])[: C.MONEY_MAX_SHOWN]
-    lines = ["", f"💰 <b>Деньги в пампах</b> (рост {C.MOVE_BLOCK_PCT}%+ за сутки)"]
-    if not pumps:
-        return lines + [f"Пампов {C.MOVE_BLOCK_PCT}+% сегодня нет."]
-    lines.append("<i>покупки = доля сделок, где покупатель брал по рынку</i>")
-    for m in pumps:
-        hours = m["minutes"] / 60
-        where = ("сейчас на пике" if m["peak_ago_min"] < 15
-                 else f"пик {_dur(m['peak_ago_min'])} назад, сейчас от пика 🔴 {abs(m['from_peak']):.0f}%")
-        lines.append(f"<b>{html.escape(base(m['symbol']))}</b> 🟢 {m['rise']:.0f}% за {_dur(m['minutes'])} · {where}")
-        usual_h = usual_hourly_volume(m["symbol"])
-        money = f"зашло ${fmt_money(m['money_in'])}"
-        if usual_h:
-            usual = usual_h * max(hours, 0.25)
-            money += f", обычно за такой срок ${fmt_money(usual)} (×{m['money_in'] / usual:.0f})"
-        else:
-            money += " (обычный оборот неизвестен: монета новая)"
-        lines.append(money)
-        share, last = m.get("buy_share"), m.get("buy_share_1h")
-        buyers = f"покупки {_share(share)} · за последний час {_share(last)}"
-        if (share is not None and last is not None and m["peak_ago_min"] < 60
-                and last < share - C.BUYERS_FADE_PP):
-            buyers += " ⚠️ покупатели выдыхаются"
-        lines.append(buyers)
-    return lines
-
-
 def _dur(minutes: float) -> str:
     h, m = divmod(int(round(minutes / 15) * 15), 60)
     if h >= 24:
@@ -211,34 +140,46 @@ def _when(ms: int) -> str:
     return pd.Timestamp(ms, unit="ms", tz="UTC").tz_convert(C.TIMEZONE).strftime("%d.%m %H:%M")
 
 
+def _trade_line(t: dict) -> str:
+    flow = ""
+    if t.get("flow_mult") is not None:
+        flow = f"\nденьги за сутки ×{t['flow_mult']:.1f} к обычному · покупки {t['buy_share']}%"
+    return (f"<b>{html.escape(base(t['symbol']))}</b> с {_when(t['entry_ms'])}\n"
+            f"вход {fmt_price_short(t['entry'])} · стоп {fmt_price_short(t['sl'])} · "
+            f"тейк {fmt_price_short(t['tp'])}{flow}")
+
+
+def _side_section(title: str, side: int, opened: list, closed: list, recent_ms: float) -> list[str]:
+    lines = [title]
+    mine_open = [t for t in opened if t["side"] == side]
+    mine_closed = [t for t in closed if t["side"] == side]
+    recent = [t for t in mine_closed if t.get("exit_ms", 0) >= recent_ms][-5:]
+    lines += [_trade_line(t) for t in mine_open]
+    for t in recent:
+        icon, dot = ("✅", "🟢") if t["net_pct"] > 0 else ("❌", "🔴")
+        lines.append(f"{icon} {html.escape(base(t['symbol']))} закрыта ({t['reason']}): {dot} {abs(t['net_pct']):.1f}%")
+    if not mine_open and not recent:
+        lines.append("Сейчас точек входа нет.")
+    if mine_closed:
+        net = [t["net_pct"] for t in mine_closed]
+        wins, total = sum(1 for x in net if x > 0), sum(net)
+        lines.append(f"Счёт: сделок {len(net)}, прибыльных {100 * wins / len(net):.0f}%, "
+                     f"сумма {'🟢' if total > 0 else '🔴'} {abs(total):.1f}%")
+    return lines
+
+
 def experiment_block(st: dict | None) -> list[str]:
-    """Нижний блок: открытые сделки стратегии 4h и итоги недавно закрытых, плюс общий счёт."""
+    """Нижний блок: точки входа по всем ликвидным монетам, отдельно лонг и шорт, и их итоги."""
     if not C.SIGNALS_ENABLED or not C.SIGNALS_TO_CHANNEL or st is None:
         return []
     j = st.get("journal", {})
     opened, closed = j.get("open", []), j.get("closed", [])
-    lines = ["", f"🧪 <b>Эксперимент</b> · сигналы на свечах {C.TF_ENTRY}",
-             "<i>проверка стратегии на живом рынке, не рекомендация</i>"]
-    for t in opened:
-        side = "🟢 <b>ПОКУПКА</b>" if t["side"] == 1 else "🔴 <b>ПРОДАЖА</b>"
-        lines.append(f"{side} {html.escape(base(t['symbol']))} с {_when(t['entry_ms'])}\n"
-                     f"вход {fmt_price_short(t['entry'])} · стоп {fmt_price_short(t['sl'])} · "
-                     f"тейк {fmt_price_short(t['tp'])}")
     recent_ms = (time.time() - C.EXPERIMENT_CLOSED_SHOW_H * 3600) * 1000
-    for t in [t for t in closed if t.get("exit_ms", 0) >= recent_ms][-5:]:
-        icon = "✅" if t["net_pct"] > 0 else "❌"
-        side = "покупка" if t["side"] == 1 else "продажа"
-        dot = "🟢" if t["net_pct"] > 0 else "🔴"
-        lines.append(f"{icon} {html.escape(base(t['symbol']))} {side} закрыта ({t['reason']}): "
-                     f"{dot} {abs(t['net_pct']):.1f}%")
-    if not opened and not any(t.get("exit_ms", 0) >= recent_ms for t in closed):
-        lines.append("Открытых сделок нет. Новый сигнал появится здесь, как только сработает стратегия.")
-    if closed:
-        net = [t["net_pct"] for t in closed]
-        wins = sum(1 for x in net if x > 0)
-        total = sum(net)
-        lines.append(f"Счёт эксперимента: сделок {len(net)}, прибыльных {100 * wins / len(net):.0f}%, "
-                     f"сумма {'🟢' if total > 0 else '🔴'} {abs(total):.1f}%")
+    lines = ["", f"🧪 <b>Эксперимент</b> · точки входа, свечи {C.TF_ENTRY}, все монеты",
+             "<i>тренд + MACD + приток денег; проверка стратегии, не рекомендация</i>", ""]
+    lines += _side_section("🟢 <b>Лонг</b>", 1, opened, closed, recent_ms)
+    lines.append("")
+    lines += _side_section("🔴 <b>Шорт</b>", -1, opened, closed, recent_ms)
     return lines
 
 
@@ -264,7 +205,6 @@ def build(tickers: dict, st: dict | None = None) -> str:
     lines += block(f"💥 <b>Обвалы {C.DUMP_MIN_PCT}%+</b>", dumps, "drop_signed",
                    f"Монет с обвалом {C.DUMP_MIN_PCT}+% сегодня нет.")
     lines += experiment_block(st)
-    lines += money_block(tickers)
     lines += ["", "<i>Данные Binance. Не финансовая рекомендация.</i>"]
     return "\n".join(lines)
 

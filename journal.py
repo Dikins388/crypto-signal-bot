@@ -43,8 +43,7 @@ def check_new_signals(symbols: list[str], st: dict) -> list[str]:
         except bd.BinanceUnavailable:
             raise
         except Exception as ex:
-            print(f"[journal] {sym}: {ex}")
-            ok = False
+            print(f"[journal] {sym}: {ex}")   # монет много: одна ошибка не повод перепроверять все
             continue
         if len(e) < 100 or len(t) < 60:
             continue
@@ -70,6 +69,8 @@ def check_new_signals(symbols: list[str], st: dict) -> list[str]:
             "entry_ms": int(entry_time.value // 1_000_000),
             "sl": entry - side * risk, "tp": entry + side * C.TP_ATR * float(row["atr"]),
             "risk_pct": risk / entry * 100, "score": int(row["score"]),
+            "flow_mult": None if pd.isna(row.get("flow_mult")) else round(float(row["flow_mult"]), 1),
+            "buy_share": None if pd.isna(row.get("buy_share")) else round(float(row["buy_share"])),
         }
         j["open"].append(trade)
         open_syms.add(sym)

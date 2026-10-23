@@ -222,7 +222,11 @@ def main():
     p.add_argument("--telegram", action="store_true", help="отправить сводку в Telegram")
     a = p.parse_args()
 
-    symbols = bd.top_symbols()
+    # Как в живом режиме: все монеты с оборотом от SIGNAL_MIN_QUOTE_VOLUME, но не больше
+    # BACKTEST_MAX_COINS самых торгуемых, чтобы проверка укладывалась в лимит времени GitHub
+    tk = bd.tickers_24h()
+    symbols = [s for s, t in sorted(tk.items(), key=lambda kv: -kv[1]["quote_volume"])
+               if t["quote_volume"] >= C.SIGNAL_MIN_QUOTE_VOLUME][: C.BACKTEST_MAX_COINS]
     print("Монеты:", ", ".join(symbols))
     tr, report = run(symbols, a.days)
     print("\n" + report)

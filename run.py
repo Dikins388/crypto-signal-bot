@@ -90,7 +90,9 @@ def _run(st: dict, tg, dry: bool):
         out += _step("сканер", lambda: monitor.scan(watch, tickers, st))
     if C.SIGNALS_ENABLED:
         sig_msgs = _step("дневник", lambda: journal.update_open(st))
-        sig_msgs += _step("сигналы", lambda: journal.check_new_signals(top, st))
+        universe = [s for s, t in sorted(tickers.items(), key=lambda kv: -kv[1]["quote_volume"])
+                    if t["quote_volume"] >= C.SIGNAL_MIN_QUOTE_VOLUME]   # все ликвидные монеты
+        sig_msgs += _step("сигналы", lambda: journal.check_new_signals(universe, st))
         if not C.SIGNALS_TO_CHANNEL:          # иначе сигналы и итоги видны в блоке «Эксперимент» в канале
             out += sig_msgs
 

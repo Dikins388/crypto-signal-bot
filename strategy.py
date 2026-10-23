@@ -70,8 +70,24 @@ def compute_signals(df: pd.DataFrame) -> pd.DataFrame:
     score_l = strong.astype(int) + vol_ok.astype(int) + rsi_l.astype(int) + mid_up.astype(int)
     score_s = strong.astype(int) + vol_ok.astype(int) + rsi_s.astype(int) + mid_dn.astype(int)
 
-    raw = np.where(trend_up & trig_long & (score_l >= C.MIN_SCORE), 1,
-          np.where(trend_dn & trig_short & (score_s >= C.MIN_SCORE), -1, 0))
+    # Деньги: сколько зашло за последние FLOW_BARS свечей (сутки на 4h) против обычного для монеты
+    # и кто давил (доля агрессивных покупок). Лонг только при притоке денег и перевесе покупателей,
+    # шорт только при притоке денег и перевесе продавцов.
+    if C.FLOW_REQUIRED and {"quote_volume", "tb_quote"} <= set(df.columns):
+        qv, tb = df["quote_volume"], df["tb_quote"]
+        flow = qv.rolling(C.FLOW_BARS).sum()
+        usual = qv.shift(C.FLOW_BARS).rolling(C.FLOW_BASE_BARS, min_periods=C.FLOW_BASE_BARS // 2).median()
+        flow_mult = flow / (usual * C.FLOW_BARS)
+        buy_share = tb.rolling(C.FLOW_BARS).sum() / flow * 100
+        money_in = flow_mult >= C.FLOW_MIN_MULT
+        flow_long = money_in & (buy_share >= C.FLOW_LONG_BUY_PCT)
+        flow_short = money_in & (buy_share <= C.FLOW_SHORT_BUY_PCT)
+    else:                                        # нет данных об объёмах (старые тесты): фильтр не применяем
+        flow_mult = buy_share = pd.Series(np.nan, index=df.index)
+        flow_long = flow_short = pd.Series(True, index=df.index)
+
+    raw = np.where(trend_up & trig_long & (score_l >= C.MIN_SCORE) & flow_long, 1,
+          np.where(trend_dn & trig_short & (score_s >= C.MIN_SCORE) & flow_short, -1, 0))
 
     # Пауза после сигнала, чтобы не спамить одним и тем же движением.
     sig = np.zeros(len(df), dtype=int)
@@ -90,6 +106,7 @@ def compute_signals(df: pd.DataFrame) -> pd.DataFrame:
     # Расшифровка для сообщения
     df["f_adx"], df["f_vol"], df["f_rsi"] = strong, vol_ok, np.where(sig == 1, rsi_l, rsi_s)
     df["f_mid"] = np.where(sig == 1, mid_up, mid_dn)
+    df["flow_mult"], df["buy_share"] = flow_mult, buy_share
     return df
 
 
