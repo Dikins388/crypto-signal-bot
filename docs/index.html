@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Крипто НЮХ</title>
+<meta name="description" content="Движения, ракеты, обвалы и всплески объёма по всем монетам Binance в реальном времени">
+<meta name="theme-color" content="#0f1115">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📊%3C/text%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#f4f5f7; --card:#ffffff; --text:#14161a; --muted:#6b7280; --line:#e5e7eb;
+  --up:#16a34a; --down:#dc2626; --flat:#6b7280; --accent:#f0b90b; --chip:#f1f2f4;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1115; --card:#181b21; --text:#e8eaed; --muted:#8b93a1; --line:#262a33;
+    --up:#22c55e; --down:#f05252; --flat:#8b93a1; --accent:#f0b90b; --chip:#20242c;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1115; --card:#181b21; --text:#e8eaed; --muted:#8b93a1; --line:#262a33;
+  --up:#22c55e; --down:#f05252; --flat:#8b93a1; --accent:#f0b90b; --chip:#20242c;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text)}
+body{font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  padding:0 16px calc(24px + env(safe-area-inset-bottom));-webkit-text-size-adjust:100%}
+.wrap{max-width:640px;margin:0 auto}
+header{position:sticky;top:0;z-index:5;background:var(--bg);padding:14px 0 10px;
+  padding-top:calc(14px + env(safe-area-inset-top))}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+h1{font-size:22px;margin:0;letter-spacing:.2px}
+h1 span{color:var(--accent)}
+.live{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);white-space:nowrap}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--flat)}
+.dot.on{background:var(--up);box-shadow:0 0 0 0 var(--up);animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.6)}70%{box-shadow:0 0 0 7px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
+.status{font-size:12.5px;color:var(--muted);margin-top:4px}
+.fg{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:6px 0 12px;
+  display:flex;align-items:center;gap:12px}
+.fg .face{font-size:30px;line-height:1}
+.fg .val{font-size:22px;font-weight:700}
+.fg .sub{font-size:13px;color:var(--muted)}
+.bar{height:6px;border-radius:3px;margin-top:6px;background:linear-gradient(90deg,#dc2626,#f59e0b,#a3a3a3,#84cc16,#16a34a);position:relative}
+.bar i{position:absolute;top:-3px;width:4px;height:12px;border-radius:2px;background:var(--text);transform:translateX(-2px)}
+section{background:var(--card);border:1px solid var(--line);border-radius:14px;margin:0 0 12px;overflow:hidden}
+section h2{font-size:16.5px;margin:0;padding:12px 14px 4px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+section h2 small{font-size:12.5px;color:var(--muted);font-weight:500}
+.cols{display:grid;grid-template-columns:1fr 64px 64px;gap:8px;padding:2px 14px 6px;font-size:11.5px;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.4px}
+.cols span:not(:first-child),.row .n{text-align:right}
+.row{display:grid;grid-template-columns:1fr 64px 64px;gap:8px;align-items:center;padding:9px 14px;border-top:1px solid var(--line);
+  color:inherit;text-decoration:none}
+.row:active{background:var(--chip)}
+.coin b{font-size:16px}
+.coin .px{display:block;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.n{font-variant-numeric:tabular-nums;font-weight:600;font-size:15px;white-space:nowrap}
+.up{color:var(--up)} .down{color:var(--down)} .flat{color:var(--flat)}
+.extra{grid-column:1/-1;font-size:13.5px;color:var(--muted);margin-top:-2px}
+.extra b{color:var(--text);font-weight:600}
+.empty{padding:10px 14px 14px;color:var(--muted);font-size:14.5px}
+.loading{padding:12px 14px 16px;color:var(--muted);font-size:14.5px}
+footer{color:var(--muted);font-size:12.5px;text-align:center;margin:16px 0 4px;line-height:1.6}
+.err{background:rgba(220,38,38,.1);color:var(--down);border-radius:10px;padding:8px 12px;font-size:13.5px;margin:0 0 10px;display:none}
+.flash-up{animation:fu 1s}
+.flash-down{animation:fd 1s}
+@keyframes fu{from{background:rgba(34,197,94,.18)}to{background:transparent}}
+@keyframes fd{from{background:rgba(240,82,82,.18)}to{background:transparent}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="top">
+      <h1>📊 Крипто <span>НЮХ</span></h1>
+      <div class="live"><span class="dot" id="dot"></span><span id="liveText">подключаюсь…</span></div>
+    </div>
+    <div class="status" id="status">Загружаю данные Binance…</div>
+  </header>
+
+  <div class="err" id="err"></div>
+
+  <div class="fg" id="fg" hidden>
+    <div class="face" id="fgFace">😐</div>
+    <div style="flex:1">
+      <div><span class="val" id="fgVal">–</span> <span id="fgName"></span></div>
+      <div class="sub" id="fgSub">Индекс страха и жадности</div>
+      <div class="bar"><i id="fgMark" style="left:50%"></i></div>
+    </div>
+  </div>
+
+  <section id="moves"><h2>📈 Движение 30%+ за сутки <small></small></h2><div class="loading">Считаю…</div></section>
+  <section id="rockets"><h2>🚀 Ракеты 80%+ <small></small></h2><div class="loading">Считаю…</div></section>
+  <section id="dumps"><h2>💥 Обвалы 55%+ <small></small></h2><div class="loading">Считаю…</div></section>
+  <section id="volume"><h2>💰 Объём ×2+ за час <small></small></h2><div class="loading">Считаю…</div></section>
+
+  <footer>Цены обновляются онлайн, списки пересчитываются после каждой 15-минутной свечи.<br>
+  Нажми на монету, чтобы открыть её на Binance.<br>Данные Binance. Не финансовая рекомендация.</footer>
+</div>
+
+<script>
+"use strict";
+// ---- Настройки: те же, что у бота в канале -------------------------------
+const CFG = {
+  MOVE_PCT: 30, ROCKET_PCT: 80, DUMP_PCT: 55,
+  MIN_DAY_USD: 1_000_000,        // для движения, ракет и обвалов: оборот за сутки
+  VOL_MULT: 2, VOL_MIN_HOUR_USD: 50_000,
+  EXCLUDE: new Set(["USDC","FDUSD","TUSD","BUSD","USDP","DAI","EUR","EURI","AEUR","USDE","USD1","U",
+                    "PAXG","WBTC","WBETH","BFUSD","XUSD","RLUSD","PYUSD","XAUT"]),
+  REST: ["https://data-api.binance.vision", "https://api.binance.com", "https://api1.binance.com"],
+  WS: "wss://data-stream.binance.vision/ws/!miniTicker@arr",
+  CONCURRENCY: 8,
+};
+const BAR = 15 * 60 * 1000;
+
+// ---- Состояние ---------------------------------------------------------
+const tick = new Map();      // symbol -> {o,h,l,c,q}
+let calc = null;             // результаты последнего пересчёта по свечам
+let lastCalc = 0, wsOk = false, restHost = CFG.REST[0];
+
+const $ = id => document.getElementById(id);
+const baseOf = s => s.slice(0, -4);
+function okSymbol(s){
+  if (!s.endsWith("USDT")) return false;
+  const b = baseOf(s);
+  if (!b || CFG.EXCLUDE.has(b) || /(UP|DOWN|BULL|BEAR)$/.test(b)) return false;
+  return true;
+}
+
+// ---- Сеть --------------------------------------------------------------
+async function api(path){
+  let lastErr;
+  for (const host of [restHost, ...CFG.REST.filter(h => h !== restHost)]){
+    try{
+      const r = await fetch(host + path, {cache: "no-store"});
+      if (r.status === 429 || r.status === 418) throw new Error("Binance просит подождать (" + r.status + ")");
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      restHost = host;
+      return await r.json();
+    }catch(e){ lastErr = e; }
+  }
+  throw lastErr;
+}
+async function pool(items, n, fn){
+  const out = new Array(items.length); let i = 0;
+  await Promise.all(Array.from({length: n}, async () => {
+    while (i < items.length){ const k = i++; try{ out[k] = await fn(items[k]); }catch(e){ out[k] = null; } }
+  }));
+  return out;
+}
+
+// ---- Цены: снимок + поток ----------------------------------------------
+async function loadTickers(){
+  const all = await api("/api/v3/ticker/24hr?type=MINI");
+  const fresh = Date.now() - 3 * 3600 * 1000;      // торговались в последние 3 часа
+  for (const t of all){
+    if (!okSymbol(t.symbol) || t.closeTime < fresh) continue;
+    tick.set(t.symbol, {o:+t.openPrice, h:+t.highPrice, l:+t.lowPrice, c:+t.lastPrice, q:+t.quoteVolume});
+  }
+}
+let ws, wsRetry = 0, pollTimer = null;
+function connectWS(){
+  try{ ws = new WebSocket(CFG.WS); }catch(e){ startPolling(); return; }
+  ws.onopen = () => { wsOk = true; wsRetry = 0; stopPolling(); setLive(); };
+  ws.onmessage = m => {
+    let changed = false;
+    for (const t of JSON.parse(m.data)){
+      if (!okSymbol(t.s)) continue;
+      tick.set(t.s, {o:+t.o, h:+t.h, l:+t.l, c:+t.c, q:+t.q}); changed = true;
+    }
+    if (changed) scheduleRender();
+  };
+  ws.onclose = ws.onerror = () => {
+    if (!wsOk && wsRetry === 0) startPolling();
+    wsOk = false; setLive();
+    if (ws) { ws.onclose = ws.onerror = null; }
+    setTimeout(connectWS, Math.min(30000, 2000 * 2 ** wsRetry++));
+  };
+}
+function startPolling(){            // запасной путь, если поток недоступен
+  if (pollTimer) return;
+  pollTimer = setInterval(async () => { try{ await loadTickers(); scheduleRender(); }catch(e){} }, 15000);
+}
+function stopPolling(){ if (pollTimer){ clearInterval(pollTimer); pollTimer = null; } }
+
+// ---- Пересчёт по 15-минутным свечам (как бот) ---------------------------
+function klinesToArr(raw){
+  return raw.map(k => ({t:+k[0], o:+k[1], h:+k[2], l:+k[3], c:+k[4], q:+k[7], ct:+k[6]}));
+}
+function hourVol(k){
+  const now = Date.now();
+  const kc = k.filter(b => b.ct < now);              // только закрытые свечи
+  if (kc.length < 8) return null;
+  const s = a => a.reduce((x, b) => x + b.q, 0);
+  return {now: s(kc.slice(-4)), prev: s(kc.slice(-8, -4)), open4: kc[kc.length - 4].o};
+}
+function analyzeMoves(k){
+  const lows = k.map(b => b.l), highs = k.map(b => b.h);
+  let runMin = Infinity, bestRise = 0, j = 0, lowAtJ = 0;
+  for (let x = 0; x < k.length; x++){
+    runMin = Math.min(runMin, lows[x]);
+    const r = highs[x] / runMin;
+    if (r > bestRise){ bestRise = r; j = x; lowAtJ = runMin; }
+  }
+  let runMax = -Infinity, bestDrop = Infinity;
+  for (let x = 0; x < k.length; x++){
+    runMax = Math.max(runMax, highs[x]);
+    const r = lows[x] / runMax;
+    if (r < bestDrop){ bestDrop = r; }
+  }
+  return {rise: (bestRise - 1) * 100, drop: (1 - bestDrop) * 100, open4: k[k.length - 4].o,
+          minutesAgoPeak: (k.length - 1 - j) * 15};
+}
+
+let calcRunning = false;
+async function recalc(){
+  if (calcRunning) return; calcRunning = true;
+  try{
+    if (!tick.size) await loadTickers();
+    const need = 1 + Math.min(CFG.MOVE_PCT, CFG.ROCKET_PCT, CFG.DUMP_PCT) / 100;
+    const syms = [...tick.keys()];
+    const moveCands = new Set(syms.filter(s => { const t = tick.get(s);
+      return t.q >= CFG.MIN_DAY_USD && t.l > 0 && t.h / t.l >= need; }));
+    const volCands = syms.filter(s => !moveCands.has(s) && tick.get(s).q >= CFG.VOL_MIN_HOUR_USD);
+    const jobs = [...[...moveCands].map(s => [s, 97]), ...volCands.map(s => [s, 9])];
+    let done = 0;
+    const res = await pool(jobs, CFG.CONCURRENCY, async ([s, lim]) => {
+      const k = klinesToArr(await api(`/api/v3/klines?symbol=${s}&interval=15m&limit=${lim}`));
+      if (++done % 25 === 0) $("status").textContent = `Пересчитываю списки… ${done} из ${jobs.length}`;
+      return [s, k];
+    });
+    const out = {moves: [], volume: [], checked: jobs.length};
+    for (const r of res){
+      if (!r) continue;
+      const [s, k] = r;
+      if (k.length < 5) continue;
+      const hv = hourVol(k);
+      const item = {s, hv};
+      if (moveCands.has(s)) Object.assign(item, analyzeMoves(k));
+      if (hv && hv.now >= CFG.VOL_MIN_HOUR_USD && hv.prev > 0 && hv.now / hv.prev >= CFG.VOL_MULT) out.volume.push(item);
+      if (moveCands.has(s)) out.moves.push(item);
+    }
+    calc = out; lastCalc = Date.now(); hideErr();
+  }catch(e){
+    showErr("Не получилось обновить списки: " + e.message + ". Попробую снова через минуту.");
+    setTimeout(recalc, 60000);
+  }finally{ calcRunning = false; render(); }
+}
+function scheduleRecalc(){            // сразу после закрытия каждой 15-минутной свечи
+  const now = Date.now();
+  const next = Math.ceil(now / BAR) * BAR + 8000;
+  setTimeout(async () => { await recalc(); scheduleRecalc(); }, next - now);
+}
+
+// ---- Отрисовка ---------------------------------------------------------
+const pctCls = x => x >= 0.05 ? "up" : x <= -0.05 ? "down" : "flat";
+function pct(x){
+  if (x == null || !isFinite(x)) return '<span class="n flat">–</span>';
+  const v = Math.abs(x), s = v >= 100 ? v.toFixed(0) : v.toFixed(1);
+  const sign = x >= 0.05 ? "+" : x <= -0.05 ? "−" : "";
+  return `<span class="n ${pctCls(x)}">${sign}${s}%</span>`;
+}
+function price(p){
+  if (!p) return "";
+  const d = p >= 1000 ? 2 : p >= 1 ? 4 : p >= 0.01 ? 5 : 8;
+  return "$" + (+p.toFixed(d)).toLocaleString("en-US", {maximumFractionDigits: d});
+}
+function usd(x){
+  if (x >= 1e9) return "$" + (x / 1e9).toFixed(1) + "\u00a0млрд";
+  if (x >= 1e6) return "$" + (x / 1e6).toFixed(1) + "\u00a0млн";
+  if (x >= 1e3) return "$" + (x / 1e3).toFixed(0) + "\u00a0тыс";
+  return "$" + x.toFixed(0);
+}
+function volTrend(hv){
+  if (!hv || !hv.now || !hv.prev) return "";
+  const r = hv.now / hv.prev;
+  if (r >= 1.2) return `⬆️ объём растёт в <b>${r.toFixed(1)} раза</b> (${usd(hv.now)})`;
+  if (r <= 0.8) return `⬇️ объём падает в <b>${(1 / r).toFixed(1)} раза</b> (${usd(hv.now)})`;
+  return `➡️ объём стоит (${usd(hv.now)})`;
+}
+const esc = s => s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const prevPrice = new Map();
+function row(it, third, extra, cols){
+  const t = tick.get(it.s) || {};
+  const h1 = it.open4 ? (t.c / it.open4 - 1) * 100 : (it.hv ? (t.c / it.hv.open4 - 1) * 100 : null);
+  const d24 = t.o ? (t.c / t.o - 1) * 100 : null;
+  const old = prevPrice.get(it.s); prevPrice.set(it.s, t.c);
+  const fl = old && t.c !== old ? (t.c > old ? " flash-up" : " flash-down") : "";
+  const b = baseOf(it.s);
+  return `<a class="row${fl}" href="https://www.binance.com/ru/trade/${b}_USDT?type=spot" target="_blank" rel="noopener">
+    <span class="coin"><b>${esc(b)}</b><span class="px">${price(t.c)}</span></span>
+    ${pct(h1)}${third === undefined ? pct(d24) : third}
+    ${extra ? `<span class="extra">${extra}</span>` : ""}</a>`;
+}
+function fill(id, items, empty, heads, mkRow){
+  const sec = $(id);
+  sec.querySelector("small").textContent = items.length ? items.length + " шт." : "";
+  const body = items.length
+    ? `<div class="cols"><span>монета</span><span>${heads[0]}</span><span>${heads[1]}</span></div>` + items.map(mkRow).join("")
+    : `<div class="empty">${empty}</div>`;
+  sec.innerHTML = sec.querySelector("h2").outerHTML + body;
+}
+function render(){
+  renderQueued = false;
+  if (!calc){ setLive(); return; }
+  const rockets = calc.moves.filter(m => m.rise >= CFG.ROCKET_PCT).sort((a, b) => b.rise - a.rise);
+  const dumps = calc.moves.filter(m => m.drop >= CFG.DUMP_PCT).sort((a, b) => b.drop - a.drop);
+  const movers = calc.moves.filter(m => m.rise < CFG.ROCKET_PCT && m.drop < CFG.DUMP_PCT)
+    .map(m => ({...m, move: m.rise >= m.drop ? m.rise : -m.drop}))
+    .filter(m => Math.abs(m.move) >= CFG.MOVE_PCT).sort((a, b) => Math.abs(b.move) - Math.abs(a.move));
+  const vol = calc.volume.slice().sort((a, b) => b.hv.now / b.hv.prev - a.hv.now / a.hv.prev);
+
+  fill("moves", movers, `Монет с движением ${CFG.MOVE_PCT}+% сегодня нет.`, ["час", "сутки"],
+       m => row(m, pct(m.move)));
+  fill("rockets", rockets, `Ракет с движением ${CFG.ROCKET_PCT}+% сегодня нет.`, ["час", "рост"],
+       m => row(m, pct(m.rise), volTrend(m.hv)));
+  fill("dumps", dumps, `Монет с обвалом ${CFG.DUMP_PCT}+% сегодня нет.`, ["час", "обвал"],
+       m => row(m, pct(-m.drop)));
+  fill("volume", vol, `Монет с ростом объёма ×${CFG.VOL_MULT}+ за час сейчас нет.`, ["час", "сутки"],
+       m => row(m, undefined, `⬆️ объём в <b>${(m.hv.now / m.hv.prev).toFixed(1)} раза</b> больше (${usd(m.hv.now)})`));
+  setLive();
+}
+let renderQueued = false, lastRender = 0;
+function scheduleRender(){            // не чаще раза в секунду, чтобы телефон не грелся
+  if (renderQueued) return; renderQueued = true;
+  setTimeout(() => { lastRender = Date.now(); render(); }, Math.max(0, 1000 - (Date.now() - lastRender)));
+}
+function hm(ms){ return new Date(ms).toLocaleTimeString("ru-RU", {hour: "2-digit", minute: "2-digit", timeZone: "Europe/Kyiv"}); }
+function setLive(){
+  $("dot").className = "dot" + (wsOk ? " on" : "");
+  $("liveText").textContent = wsOk ? "онлайн" : pollTimer ? "раз в 15 сек" : "нет связи";
+  if (lastCalc){
+    const next = Math.ceil(Date.now() / BAR) * BAR;
+    $("status").textContent = `Списки: ${hm(lastCalc)} (Киев) · следующий пересчёт в ${hm(next)} · монет: ${tick.size}`;
+  }
+}
+function showErr(t){ const e = $("err"); e.textContent = t; e.style.display = "block"; }
+function hideErr(){ $("err").style.display = "none"; }
+
+// ---- Индекс страха и жадности ------------------------------------------
+async function loadFG(){
+  try{
+    const d = (await (await fetch("https://api.alternative.me/fng/?limit=2", {cache: "no-store"})).json()).data;
+    const v = +d[0].value, prev = +d[1].value;
+    const names = {"Extreme Fear":"сильный страх","Fear":"страх","Neutral":"нейтрально","Greed":"жадность","Extreme Greed":"сильная жадность"};
+    $("fgFace").textContent = v < 25 ? "😱" : v < 45 ? "😨" : v <= 55 ? "😐" : v < 75 ? "😏" : "🤑";
+    $("fgVal").textContent = v;
+    $("fgName").textContent = names[d[0].value_classification] || d[0].value_classification;
+    $("fgSub").textContent = "Индекс страха и жадности · вчера " + prev;
+    $("fgMark").style.left = v + "%";
+    $("fg").hidden = false;
+  }catch(e){ /* сайт индекса недоступен: блок просто не показываем */ }
+}
+
+// ---- Старт -------------------------------------------------------------
+(async function start(){
+  loadFG(); setInterval(loadFG, 30 * 60 * 1000);
+  try{ await loadTickers(); }catch(e){ showErr("Не могу получить данные Binance: " + e.message); }
+  connectWS();
+  await recalc();
+  scheduleRecalc();
+  setInterval(setLive, 30000);
+  document.addEventListener("visibilitychange", () => {   // вернулся на вкладку: если списки устарели, пересчитать
+    if (!document.hidden && Date.now() - lastCalc > BAR) recalc();
+  });
+})();
+</script>
+</body>
+</html>
