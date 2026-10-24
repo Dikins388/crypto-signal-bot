@@ -109,9 +109,9 @@ def find_volume_jumps(tickers: dict) -> list[dict]:
 
 
 def volume_block(items: list[dict]) -> list[str]:
-    lines = [f"💰 <b>Объём ×{C.HOUR_VOLUME_MULT:g} за час</b>"]
+    lines = [f"💰 <b>Объём ×{C.HOUR_VOLUME_MULT:g}+ за час</b>"]
     if not items:
-        return lines + [f"Монет с ростом объёма ×{C.HOUR_VOLUME_MULT:g} за час сейчас нет."]
+        return lines + [f"Монет с ростом объёма ×{C.HOUR_VOLUME_MULT:g}+ за час сейчас нет."]
     lines.append("<i>монета · цена за час · объём к прошлому часу</i>")
     shown = items[: C.BLOCK_MAX_SHOWN]
     for m in shown:
