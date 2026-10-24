@@ -140,7 +140,7 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;margin:16px 0 4px;l
   <section id="volume"><h2>💰 Объём ×2+ за час <small></small></h2><div class="loading">Считаю…</div></section>
 
   <footer>Цены, движения, ракеты и обвалы обновляются каждую секунду, объём ×2+ после каждой 15-минутной свечи.<br>
-  Нажми на монету, чтобы открыть её на Binance; × скрывает монету до следующего открытия страницы.<br>Данные Binance. Не финансовая рекомендация.</footer>
+  Нажми на монету, чтобы открыть её на Bybit; × скрывает монету до следующего открытия страницы.<br>Данные Binance. Не финансовая рекомендация.</footer>
 </div>
 
 <script>
@@ -446,7 +446,7 @@ function renderWatch(){
   if (!watch){ box.hidden = true; return; }
   box.hidden = false;
   const b = baseOf(watch.s), t = tick.get(watch.s);
-  const head = (right) => `<div class="head"><div><div class="name">${esc(b)}${watch.err ? "" : `<a href="https://www.binance.com/ru/trade/${b}_USDT?type=spot" target="_blank" rel="noopener">Binance ↗</a>`}</div>
+  const head = (right) => `<div class="head"><div><div class="name">${esc(b)}${watch.err ? "" : `<a href="${tradeUrl(b)}" target="_blank" rel="noopener">Bybit ↗</a>`}</div>
       ${t ? `<div class="big">${price(t.c)}</div>` : ""}</div>${right || ""}</div>`;
   if (watch.err){ box.innerHTML = head() + `<div class="note">${esc(watch.err)}</div>`; return; }
   if (!t || watch.loading || !watch.k){ box.innerHTML = head() + `<div class="note">Загружаю данные по монете…</div>`; return; }
@@ -516,6 +516,9 @@ function setupSearch(){
   $("qClear").addEventListener("click", unwatch);
 }
 
+// Нажатие на монету открывает её страницу на Bybit (данные при этом с Binance)
+const tradeUrl = b => `https://www.bybit.com/ru-RU/trade/spot/${encodeURIComponent(b)}/USDT`;
+
 // ---- Скрытые монеты: только до закрытия или обновления страницы ---------
 const hidden = new Set();
 function updateHiddenBar(){
@@ -532,7 +535,7 @@ function setupRows(){
     const x = e.target.closest("[data-hide]");
     if (x){ hidden.add(x.dataset.hide); updateHiddenBar(); render(); return; }
     const r = e.target.closest(".row[data-b]");
-    if (r) window.open(`https://www.binance.com/ru/trade/${r.dataset.b}_USDT?type=spot`, "_blank", "noopener");
+    if (r) window.open(tradeUrl(r.dataset.b), "_blank", "noopener");
   });
   $("showAll").addEventListener("click", () => { hidden.clear(); updateHiddenBar(); render(); });
 }
