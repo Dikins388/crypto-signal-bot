@@ -95,7 +95,7 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;margin:16px 0 4px;l
   <section id="dumps"><h2>💥 Обвалы 55%+ <small></small></h2><div class="loading">Считаю…</div></section>
   <section id="volume"><h2>💰 Объём ×2+ за час <small></small></h2><div class="loading">Считаю…</div></section>
 
-  <footer>Цены обновляются онлайн, списки пересчитываются после каждой 15-минутной свечи.<br>
+  <footer>Цены, движения, ракеты и обвалы обновляются каждую секунду, объём ×2+ после каждой 15-минутной свечи.<br>
   Нажми на монету, чтобы открыть её на Binance.<br>Данные Binance. Не финансовая рекомендация.</footer>
 </div>
 
@@ -230,22 +230,48 @@ async function recalc(){
       if (++done % 25 === 0) $("status").textContent = `Пересчитываю списки… ${done} из ${jobs.length}`;
       return [s, k];
     });
-    const out = {moves: [], volume: [], checked: jobs.length};
+    const out = {volume: [], kl: new Map(), moves: [], checked: jobs.length};
     for (const r of res){
       if (!r) continue;
       const [s, k] = r;
       if (k.length < 5) continue;
       const hv = hourVol(k);
-      const item = {s, hv};
-      if (moveCands.has(s)) Object.assign(item, analyzeMoves(k));
-      if (hv && hv.now >= CFG.VOL_MIN_HOUR_USD && hv.prev > 0 && hv.now / hv.prev >= CFG.VOL_MULT) out.volume.push(item);
-      if (moveCands.has(s)) out.moves.push(item);
+      if (hv && hv.now >= CFG.VOL_MIN_HOUR_USD && hv.prev > 0 && hv.now / hv.prev >= CFG.VOL_MULT) out.volume.push({s, hv});
+      if (moveCands.has(s)) out.kl.set(s, {k, hv});
     }
     calc = out; lastCalc = Date.now(); hideErr();
   }catch(e){
     showErr("Не получилось обновить списки: " + e.message + ". Попробую снова через минуту.");
     setTimeout(recalc, 60000);
   }finally{ calcRunning = false; render(); }
+}
+// Свечи кандидатов дополняем живой ценой: у последней свечи обновляем close, high и low,
+// а когда начинается новая 15-минутка, добавляем её. Так ракеты и обвалы пересчитываются каждую секунду.
+function liveCandles(){
+  const now = Date.now();
+  for (const [s, it] of calc.kl){
+    const t = tick.get(s); if (!t || !t.c) continue;
+    const k = it.k; let last = k[k.length - 1];
+    if (now > last.ct){
+      const start = now - now % BAR;
+      last = {t: start, o: t.c, h: t.c, l: t.c, c: t.c, q: 0, ct: start + BAR - 1};
+      k.push(last); if (k.length > 97) k.shift();
+    }
+    last.c = t.c; if (t.c > last.h) last.h = t.c; if (t.c < last.l) last.l = t.c;
+  }
+}
+const loadingNew = new Set();
+function findNewCandidates(){   // монета только что резко пошла: подгружаем её свечи, не дожидаясь 15 минут
+  const need = 1 + Math.min(CFG.MOVE_PCT, CFG.ROCKET_PCT, CFG.DUMP_PCT) / 100;
+  for (const [s, t] of tick){
+    if (calc.kl.has(s) || loadingNew.has(s) || loadingNew.size >= 4) continue;
+    if (t.q < CFG.MIN_DAY_USD || !(t.l > 0) || t.h / t.l < need) continue;
+    loadingNew.add(s);
+    api(`/api/v3/klines?symbol=${s}&interval=15m&limit=97`).then(raw => {
+      const k = klinesToArr(raw);
+      if (k.length >= 5 && calc) calc.kl.set(s, {k, hv: hourVol(k)});
+    }).catch(() => {}).finally(() => { loadingNew.delete(s); scheduleRender(); });
+  }
 }
 function scheduleRecalc(){            // сразу после закрытия каждой 15-минутной свечи
   const now = Date.now();
@@ -304,6 +330,8 @@ function fill(id, items, empty, heads, mkRow){
 function render(){
   renderQueued = false;
   if (!calc){ setLive(); return; }
+  liveCandles(); findNewCandidates();
+  calc.moves = [...calc.kl].map(([s, it]) => ({s, hv: it.hv, ...analyzeMoves(it.k)}));
   const rockets = calc.moves.filter(m => m.rise >= CFG.ROCKET_PCT).sort((a, b) => b.rise - a.rise);
   const dumps = calc.moves.filter(m => m.drop >= CFG.DUMP_PCT).sort((a, b) => b.drop - a.drop);
   const movers = calc.moves.filter(m => m.rise < CFG.ROCKET_PCT && m.drop < CFG.DUMP_PCT)
@@ -361,6 +389,7 @@ async function loadFG(){
   await recalc();
   scheduleRecalc();
   setInterval(setLive, 30000);
+  setInterval(scheduleRender, 1000);
   document.addEventListener("visibilitychange", () => {   // вернулся на вкладку: если списки устарели, пересчитать
     if (!document.hidden && Date.now() - lastCalc > BAR) recalc();
   });
