@@ -4,6 +4,7 @@
   1) монеты со всего спота Binance, сдвинувшиеся за сутки на MOVE_BLOCK_PCT%+ (в любую сторону);
   2) ракеты: рост от дна до последующей вершины на ROCKET_MIN_PCT%+;
   3) обвалы: падение от вершины до последующего дна на DUMP_MIN_PCT%+;
+  4) объём: оборот за последний час в HOUR_VOLUME_MULT раз больше, чем за предыдущий час;
 Строки в порядке «монета · час · сутки», рост 🟢, падение 🔴.
 """
 from __future__ import annotations
@@ -18,7 +19,7 @@ import pandas as pd
 import binance_data as bd
 import config as C
 from digest import fear_greed
-from util import base, fmt_price_short, now_kyiv
+from util import base, fmt_money, fmt_price_short, now_kyiv
 
 def channel_id() -> str | None:
     cid = os.environ.get("TELEGRAM_CHANNEL_ID", "").strip()
@@ -78,6 +79,47 @@ def scan_moves(tickers: dict) -> list[dict]:
         })
     _cache.update(id=id(tickers), moves=out)
     return out
+
+
+def find_volume_jumps(tickers: dict) -> list[dict]:
+    """Монеты, у которых оборот в USDT за последний час (4 закрытые 15-минутки) вырос в HOUR_VOLUME_MULT раз
+    и больше против предыдущего часа. Капитализация не учитывается, только оборот за час."""
+    out = []
+    for sym, t in tickers.items():
+        if t["quote_volume"] < C.VOLUME_MIN_HOUR_USD:      # за сутки меньше, чем нужно за один час
+            continue
+        try:
+            k = bd.drop_unclosed(bd.klines(sym, "15m", limit=9))
+        except Exception as e:
+            print(f"[объём] {sym}: {e}")
+            continue
+        if len(k) < 8 or "quote_volume" not in k:
+            continue
+        qv = k["quote_volume"].to_numpy(float)
+        now_h, prev_h = qv[-4:].sum(), qv[-8:-4].sum()
+        if now_h < C.VOLUME_MIN_HOUR_USD or prev_h <= 0:
+            continue
+        mult = now_h / prev_h
+        if mult < C.HOUR_VOLUME_MULT:
+            continue
+        out.append({"symbol": sym, "mult": mult, "hour_usd": now_h,
+                    "h1": (k["close"].iloc[-1] / k["open"].iloc[-4] - 1) * 100})
+    print(f"[объём] проверено монет: {len(tickers)}, с ростом объёма ×{C.HOUR_VOLUME_MULT:g}: {len(out)}")
+    return sorted(out, key=lambda m: -m["mult"])
+
+
+def volume_block(items: list[dict]) -> list[str]:
+    lines = [f"💰 <b>Объём ×{C.HOUR_VOLUME_MULT:g} за час</b>"]
+    if not items:
+        return lines + [f"Монет с ростом объёма ×{C.HOUR_VOLUME_MULT:g} за час сейчас нет."]
+    lines.append("<i>монета · цена за час · объём к прошлому часу</i>")
+    shown = items[: C.BLOCK_MAX_SHOWN]
+    for m in shown:
+        lines.append(f"<b>{html.escape(base(m['symbol']))}</b>   {_pct(m['h1'])}   "
+                     f"×{m['mult']:.1f} (${fmt_money(m['hour_usd'])})")
+    if len(items) > len(shown):
+        lines.append(f"…и ещё {len(items) - len(shown)}")
+    return lines
 
 
 def find_rockets(tickers: dict) -> list[dict]:
@@ -167,7 +209,7 @@ def _side_section(title: str, side: int, opened: list, closed: list, recent_ms: 
 
 def experiment_block(st: dict | None) -> list[str]:
     """Нижний блок: точки входа по всем ликвидным монетам, отдельно лонг и шорт, и их итоги."""
-    if not C.SIGNALS_ENABLED or not C.SIGNALS_TO_CHANNEL or st is None:
+    if not C.SIGNALS_ENABLED or not C.SIGNALS_TO_CHANNEL or not C.CHANNEL_SHOW_EXPERIMENT or st is None:
         return []
     j = st.get("journal", {})
     opened, closed = j.get("open", []), j.get("closed", [])
@@ -207,6 +249,9 @@ def build(tickers: dict, st: dict | None = None) -> str:
     lines.append("")
     lines += block(f"💥 <b>Обвалы {C.DUMP_MIN_PCT}%+</b>", dumps, "drop_signed",
                    f"Монет с обвалом {C.DUMP_MIN_PCT}+% сегодня нет.")
+    if C.VOLUME_BLOCK:
+        lines.append("")
+        lines += volume_block(find_volume_jumps(tickers))
     lines += experiment_block(st)
     lines += ["", "<i>Данные Binance. Не финансовая рекомендация.</i>"]
     return "\n".join(lines)
