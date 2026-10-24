@@ -19,7 +19,7 @@ import pandas as pd
 import binance_data as bd
 import config as C
 from digest import fear_greed
-from util import base, fmt_money, fmt_price_short, now_kyiv
+from util import base, fmt_price_short, now_kyiv
 
 def channel_id() -> str | None:
     cid = os.environ.get("TELEGRAM_CHANNEL_ID", "").strip()
@@ -76,9 +76,42 @@ def scan_moves(tickers: dict) -> list[dict]:
             "peak_ago_min": (len(k) - 1 - j) * 15, "from_peak": (price / highs[j] - 1) * 100,
             # падение
             "drop": (1 - drop_r[q]) * 100, "drop_minutes": (q - p + 1) * 15,
+            # оборот в USDT за последний час и за предыдущий (по закрытым 15-минуткам)
+            **_hour_volumes(k),
         })
     _cache.update(id=id(tickers), moves=out)
     return out
+
+
+def _hour_volumes(k: pd.DataFrame) -> dict:
+    kc = bd.drop_unclosed(k)
+    if len(kc) < 8 or "quote_volume" not in kc:
+        return {"vol_now": None, "vol_prev": None}
+    qv = kc["quote_volume"].to_numpy(float)
+    return {"vol_now": float(qv[-4:].sum()), "vol_prev": float(qv[-8:-4].sum())}
+
+
+def _usd(x: float) -> str:
+    """$180 тыс / $1.2 млн / $950"""
+    if x >= 1e9:
+        return f"${x / 1e9:.1f} млрд"
+    if x >= 1e6:
+        return f"${x / 1e6:.1f} млн"
+    if x >= 1e3:
+        return f"${x / 1e3:.0f} тыс"
+    return f"${x:.0f}"
+
+
+def _vol_trend(now: float | None, prev: float | None) -> str:
+    """Что с объёмом за последний час против предыдущего: растёт / стоит / падает."""
+    if not now or not prev:
+        return ""
+    r = now / prev
+    if r >= 1.2:
+        return f"⬆️ растёт в {r:.1f} раза ({_usd(now)})"
+    if r <= 0.8:
+        return f"⬇️ падает в {1 / r:.1f} раза ({_usd(now)})"
+    return f"➡️ стоит ({_usd(now)})"
 
 
 def find_volume_jumps(tickers: dict) -> list[dict]:
@@ -113,12 +146,9 @@ def volume_block(items: list[dict]) -> list[str]:
     if not items:
         return lines + [f"Монет с ростом объёма ×{C.HOUR_VOLUME_MULT:g}+ за час сейчас нет."]
     lines.append("<i>монета · цена за час · объём к прошлому часу</i>")
-    shown = items[: C.BLOCK_MAX_SHOWN]
-    for m in shown:
+    for m in items:                                  # все монеты, без обрезки
         lines.append(f"<b>{html.escape(base(m['symbol']))}</b>   {_pct(m['h1'])}   "
-                     f"×{m['mult']:.1f} (${fmt_money(m['hour_usd'])})")
-    if len(items) > len(shown):
-        lines.append(f"…и ещё {len(items) - len(shown)}")
+                     f"в {m['mult']:.1f} раза ({_usd(m['hour_usd'])})")
     return lines
 
 
@@ -155,16 +185,18 @@ def _pct(x: float | None) -> str:
     return f"{dot} {v:.0f}%" if v >= 100 else f"{dot} {v:.1f}%"
 
 
-def block(title: str, items: list[dict], key: str, empty: str) -> list[str]:
+def block(title: str, items: list[dict], key: str, empty: str, vol: bool = False) -> list[str]:
     """Блок обычным (не моноширинным) шрифтом: он крупнее и в нём видны цветные шарики.
     Порядок в строке как в таблице: монета · час · сутки."""
     lines = [title]
     if not items:
         return lines + [empty]
-    lines.append("<i>монета · час · сутки</i>")
+    lines.append("<i>монета · час · сутки · объём за час</i>" if vol else "<i>монета · час · сутки</i>")
     shown = items[: C.BLOCK_MAX_SHOWN]
     for m in shown:
-        lines.append(f"<b>{html.escape(base(m['symbol']))}</b>   {_pct(m['h1'])}   {_pct(m[key])}")
+        line = f"<b>{html.escape(base(m['symbol']))}</b>   {_pct(m['h1'])}   {_pct(m[key])}"
+        trend = _vol_trend(m.get("vol_now"), m.get("vol_prev")) if vol else ""
+        lines.append(f"{line}   {trend}" if trend else line)
     if len(items) > len(shown):
         lines.append(f"…и ещё {len(items) - len(shown)}")
     return lines
@@ -245,7 +277,7 @@ def build(tickers: dict, st: dict | None = None) -> str:
                    f"Монет с движением {C.MOVE_BLOCK_PCT}+% сегодня нет.")
     lines.append("")
     lines += block(f"🚀 <b>Ракеты {C.ROCKET_MIN_PCT}%+</b>", rockets, "rise_signed",
-                   f"Ракет с движением {C.ROCKET_MIN_PCT}+% сегодня нет.")
+                   f"Ракет с движением {C.ROCKET_MIN_PCT}+% сегодня нет.", vol=True)
     lines.append("")
     lines += block(f"💥 <b>Обвалы {C.DUMP_MIN_PCT}%+</b>", dumps, "drop_signed",
                    f"Монет с обвалом {C.DUMP_MIN_PCT}+% сегодня нет.")
