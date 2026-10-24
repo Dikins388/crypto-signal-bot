@@ -67,6 +67,35 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;margin:16px 0 4px;l
 .flash-down{animation:fd 1s}
 @keyframes fu{from{background:rgba(34,197,94,.18)}to{background:transparent}}
 @keyframes fd{from{background:rgba(240,82,82,.18)}to{background:transparent}}
+.search{position:relative;margin:2px 0 12px}
+.search input{width:100%;font-size:16px;padding:12px 44px 12px 40px;border-radius:12px;border:1px solid var(--line);
+  background:var(--card);color:var(--text);outline:none;-webkit-appearance:none;appearance:none}
+.search input:focus{border-color:var(--accent)}
+.search .ico{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
+.search button{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:var(--muted);
+  font-size:20px;width:36px;height:36px;border-radius:8px;cursor:pointer}
+.sugg{position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--card);border:1px solid var(--line);border-radius:12px;
+  z-index:20;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.sugg div{padding:11px 14px;border-top:1px solid var(--line);display:flex;justify-content:space-between;cursor:pointer}
+.sugg div:first-child{border-top:0}
+.sugg div:active,.sugg div.sel{background:var(--chip)}
+.sugg small{color:var(--muted)}
+.watch{background:var(--card);border:1px solid var(--accent);border-radius:14px;padding:14px;margin:0 0 12px}
+.watch .head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.watch .name{font-size:22px;font-weight:700}
+.watch .name a{color:var(--accent);font-size:13px;font-weight:500;margin-left:6px;text-decoration:none}
+.watch .big{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:2px}
+.watch .tag{font-size:12.5px;border-radius:999px;padding:3px 9px;background:var(--chip);color:var(--muted);white-space:nowrap}
+.watch .tag.hot{background:rgba(240,185,11,.16);color:var(--accent)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin-top:12px}
+.grid div{font-size:13px;color:var(--muted)}
+.grid b{display:block;font-size:16px;color:var(--text);font-variant-numeric:tabular-nums;font-weight:600}
+.grid b.up{color:var(--up)} .grid b.down{color:var(--down)} .grid b.flat{color:var(--flat)}
+.grid .wide{grid-column:1/-1}
+.watch .vol{margin-top:12px;font-size:14px;color:var(--muted)}
+.watch .vol b{color:var(--text)}
+.spark{display:block;width:100%;height:64px;margin-top:12px}
+.watch .note{font-size:12.5px;color:var(--muted);margin-top:8px}
 </style>
 </head>
 <body>
@@ -78,6 +107,15 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;margin:16px 0 4px;l
     </div>
     <div class="status" id="status">Загружаю данные Binance…</div>
   </header>
+
+  <div class="search">
+    <span class="ico">🔍</span>
+    <input id="q" type="text" enterkeyhint="search" autocomplete="off" autocapitalize="characters" spellcheck="false"
+           placeholder="Монета для слежки: BTC, PEPE, SOL…" aria-label="Поиск монеты">
+    <button id="qClear" aria-label="Очистить" hidden>×</button>
+    <div class="sugg" id="sugg" hidden></div>
+  </div>
+  <div class="watch" id="watch" hidden></div>
 
   <div class="err" id="err"></div>
 
@@ -218,6 +256,7 @@ async function recalc(){
   if (calcRunning) return; calcRunning = true;
   try{
     if (!tick.size) await loadTickers();
+    if (watch && !watch.err) loadWatchCandles();
     const need = 1 + Math.min(CFG.MOVE_PCT, CFG.ROCKET_PCT, CFG.DUMP_PCT) / 100;
     const syms = [...tick.keys()];
     const moveCands = new Set(syms.filter(s => { const t = tick.get(s);
@@ -329,6 +368,7 @@ function fill(id, items, empty, heads, mkRow){
 }
 function render(){
   renderQueued = false;
+  renderWatch();
   if (!calc){ setLive(); return; }
   liveCandles(); findNewCandidates();
   calc.moves = [...calc.kl].map(([s, it]) => ({s, hv: it.hv, ...analyzeMoves(it.k)}));
@@ -349,6 +389,123 @@ function render(){
        m => row(m, undefined, `⬆️ объём в <b>${(m.hv.now / m.hv.prev).toFixed(1)} раза</b> больше (${usd(m.hv.now)})`));
   setLive();
 }
+// ---- Слежка за одной монетой ---------------------------------------------
+let watch = null;            // {s, k, hv, loading, err}
+function normCoin(text){
+  let t = (text || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (t.endsWith("USDT") && t.length > 4) t = t.slice(0, -4);
+  return t;
+}
+async function watchCoin(base){
+  const s = base + "USDT";
+  try{ localStorage.setItem("nyuh_watch", base); }catch(e){}
+  $("q").value = base; $("qClear").hidden = false; $("sugg").hidden = true;
+  if (!tick.has(s)){
+    watch = {s, err: tick.size ? `Монеты ${base} нет среди пар к USDT на споте Binance (стейблкоины не показываем).` : null, loading: !tick.size};
+    renderWatch(); return;
+  }
+  watch = {s, loading: true}; renderWatch();
+  await loadWatchCandles();
+}
+async function loadWatchCandles(){
+  if (!watch || !tick.has(watch.s)) return;
+  const s = watch.s;
+  try{
+    const k = klinesToArr(await api(`/api/v3/klines?symbol=${s}&interval=15m&limit=97`));
+    if (!watch || watch.s !== s) return;
+    watch.k = k; watch.hv = hourVol(k); watch.loading = false; watch.err = null;
+  }catch(e){ if (watch && watch.s === s){ watch.loading = false; watch.err = "Не получилось загрузить свечи: " + e.message; } }
+  renderWatch();
+}
+function unwatch(){
+  watch = null; $("q").value = ""; $("qClear").hidden = true; $("sugg").hidden = true;
+  try{ localStorage.removeItem("nyuh_watch"); }catch(e){}
+  renderWatch();
+}
+function spark(k){
+  const c = k.map(b => b.c), lo = Math.min(...k.map(b => b.l)), hi = Math.max(...k.map(b => b.h));
+  if (!(hi > lo)) return "";
+  const W = 300, H = 64, n = c.length - 1;
+  const pts = c.map((v, i) => `${(i / n * W).toFixed(1)},${(H - 4 - (v - lo) / (hi - lo) * (H - 8)).toFixed(1)}`).join(" ");
+  const col = c[c.length - 1] >= c[0] ? "var(--up)" : "var(--down)";
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="Цена за сутки">
+    <polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
+}
+function renderWatch(){
+  const box = $("watch");
+  if (!watch){ box.hidden = true; return; }
+  box.hidden = false;
+  const b = baseOf(watch.s), t = tick.get(watch.s);
+  const head = (right) => `<div class="head"><div><div class="name">${esc(b)}${watch.err ? "" : `<a href="https://www.binance.com/ru/trade/${b}_USDT?type=spot" target="_blank" rel="noopener">Binance ↗</a>`}</div>
+      ${t ? `<div class="big">${price(t.c)}</div>` : ""}</div>${right || ""}</div>`;
+  if (watch.err){ box.innerHTML = head() + `<div class="note">${esc(watch.err)}</div>`; return; }
+  if (!t || watch.loading || !watch.k){ box.innerHTML = head() + `<div class="note">Загружаю данные по монете…</div>`; return; }
+  // живая цена в последнюю свечу, как у ракет
+  const k = watch.k, now = Date.now(); let last = k[k.length - 1];
+  if (now > last.ct){ const st = now - now % BAR; last = {t: st, o: t.c, h: t.c, l: t.c, c: t.c, q: 0, ct: st + BAR - 1}; k.push(last); if (k.length > 97) k.shift(); }
+  last.c = t.c; if (t.c > last.h) last.h = t.c; if (t.c < last.l) last.l = t.c;
+  const m = analyzeMoves(k);
+  const h1 = (t.c / m.open4 - 1) * 100, d24 = t.o ? (t.c / t.o - 1) * 100 : null;
+  const tags = [];
+  if (m.rise >= CFG.ROCKET_PCT) tags.push("🚀 ракета");
+  if (m.drop >= CFG.DUMP_PCT) tags.push("💥 обвал");
+  if (!tags.length && Math.max(m.rise, m.drop) >= CFG.MOVE_PCT && t.q >= CFG.MIN_DAY_USD) tags.push("📈 движение 30%+");
+  if (watch.hv && watch.hv.prev > 0 && watch.hv.now >= CFG.VOL_MIN_HOUR_USD && watch.hv.now / watch.hv.prev >= CFG.VOL_MULT) tags.push("💰 объём ×2+");
+  const tag = tags.length ? `<span class="tag hot">${tags.join(" · ")}</span>` : `<span class="tag">спокойно</span>`;
+  const vt = volTrend(watch.hv);
+  box.innerHTML = head(tag) + `
+    <div class="grid">
+      <div>За час<b class="${pctCls(h1)}">${pct(h1).replace(/<[^>]+>/g, "")}</b></div>
+      <div>За сутки<b class="${pctCls(d24)}">${pct(d24).replace(/<[^>]+>/g, "")}</b></div>
+      <div>Рост от дна за сутки<b class="up">+${m.rise.toFixed(1)}%</b></div>
+      <div>Падение от вершины<b class="down">−${m.drop.toFixed(1)}%</b></div>
+      <div>Оборот за сутки<b>${usd(t.q)}</b></div>
+      <div>Мин. за сутки<b>${price(t.l)}</b></div>
+      <div class="wide">Макс. за сутки<b>${price(t.h)}</b></div>
+    </div>
+    <div class="vol">${vt ? vt.replace("объём", "Объём за час:") : "Объём за час: мало данных"}</div>
+    ${spark(k)}
+    <div class="note">Цена обновляется каждую секунду, объём за час после каждой 15-минутной свечи. График за последние 24 часа.</div>`;
+}
+// подсказки при вводе
+let suggIdx = -1;
+function showSugg(){
+  const q = normCoin($("q").value), box = $("sugg");
+  $("qClear").hidden = !$("q").value;
+  if (!q){ box.hidden = true; return; }
+  const all = [...tick.keys()].map(baseOf);
+  const list = all.filter(b => b.startsWith(q)).sort((a, b) => a.length - b.length || (tick.get(b + "USDT").q - tick.get(a + "USDT").q))
+    .concat(all.filter(b => !b.startsWith(q) && b.includes(q))).slice(0, 6);
+  if (!list.length){ box.innerHTML = `<div><span>Не нашёл «${esc(q)}»</span></div>`; box.hidden = false; suggIdx = -1; return; }
+  suggIdx = -1;
+  box.innerHTML = list.map(b => `<div data-b="${b}"><span><b>${b}</b></span><small>${price(tick.get(b + "USDT").c)}</small></div>`).join("");
+  box.hidden = false;
+}
+function setupSearch(){
+  const q = $("q");
+  q.addEventListener("input", showSugg);
+  q.addEventListener("focus", showSugg);
+  q.addEventListener("keydown", e => {
+    const items = [...$("sugg").querySelectorAll("div[data-b]")];
+    if (e.key === "ArrowDown" || e.key === "ArrowUp"){
+      e.preventDefault(); if (!items.length) return;
+      suggIdx = (suggIdx + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+      items.forEach((d, i) => d.classList.toggle("sel", i === suggIdx));
+    } else if (e.key === "Enter"){
+      e.preventDefault();
+      const pick = items[suggIdx] || items.find(d => d.dataset.b === normCoin(q.value)) || items[0];
+      const base = pick ? pick.dataset.b : normCoin(q.value);
+      if (base){ watchCoin(base); q.blur(); }
+    } else if (e.key === "Escape"){ $("sugg").hidden = true; }
+  });
+  $("sugg").addEventListener("pointerdown", e => {
+    const d = e.target.closest("div[data-b]"); if (!d) return;
+    e.preventDefault(); watchCoin(d.dataset.b); q.blur();
+  });
+  q.addEventListener("blur", () => setTimeout(() => { $("sugg").hidden = true; }, 150));
+  $("qClear").addEventListener("click", unwatch);
+}
+
 let renderQueued = false, lastRender = 0;
 function scheduleRender(){            // не чаще раза в секунду, чтобы телефон не грелся
   if (renderQueued) return; renderQueued = true;
@@ -384,7 +541,10 @@ async function loadFG(){
 // ---- Старт -------------------------------------------------------------
 (async function start(){
   loadFG(); setInterval(loadFG, 30 * 60 * 1000);
+  setupSearch();
+  let saved = null; try{ saved = localStorage.getItem("nyuh_watch"); }catch(e){}
   try{ await loadTickers(); }catch(e){ showErr("Не могу получить данные Binance: " + e.message); }
+  if (saved) watchCoin(saved);
   connectWS();
   await recalc();
   scheduleRecalc();
