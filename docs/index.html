@@ -149,7 +149,7 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;margin:16px 0 4px;l
 const CFG = {
   MOVE_PCT: 30, ROCKET_PCT: 80, DUMP_PCT: 55,
   MIN_DAY_USD: 1_000_000,        // для движения, ракет и обвалов: оборот за сутки
-  VOL_MULT: 2, VOL_MIN_HOUR_USD: 50_000,
+  VOL_MULT: 2, VOL_MIN_HOUR_USD: 700_000,   // оборот за последний час от $700 тыс.
   EXCLUDE: new Set(["USDC","FDUSD","TUSD","BUSD","USDP","DAI","EUR","EURI","AEUR","USDE","USD1","U",
                     "PAXG","WBTC","WBETH","BFUSD","XUSD","RLUSD","PYUSD","XAUT"]),
   REST: ["https://data-api.binance.vision", "https://api.binance.com", "https://api1.binance.com"],
