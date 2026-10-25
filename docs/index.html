@@ -244,21 +244,21 @@ function hourVol(k){
   const s = a => a.reduce((x, b) => x + b.q, 0);
   return {now: s(kc.slice(-4)), prev: s(kc.slice(-8, -4)), open4: kc[kc.length - 4].o};
 }
+// Рост и падение за сутки считаем только от одной свечи к следующей: внутри одной 15-минутки
+// не видно, что было раньше, максимум или минимум (25.10: ложный «обвал» у T из одной свечи).
+// last: какое движение было последним, чтобы монета с ростом и падением стояла в одном блоке.
 function analyzeMoves(k){
-  const lows = k.map(b => b.l), highs = k.map(b => b.h);
-  let runMin = Infinity, bestRise = 0, j = 0, lowAtJ = 0;
+  let prevMin = Infinity, prevMax = 0, bestRise = 1, j = 0, bestDrop = 1, q = 0;
   for (let x = 0; x < k.length; x++){
-    runMin = Math.min(runMin, lows[x]);
-    const r = highs[x] / runMin;
-    if (r > bestRise){ bestRise = r; j = x; lowAtJ = runMin; }
+    const b = k[x];
+    if (x > 0){
+      const r = b.h / prevMin; if (r > bestRise){ bestRise = r; j = x; }
+      const d = b.l / prevMax; if (d < bestDrop){ bestDrop = d; q = x; }
+    }
+    prevMin = Math.min(prevMin, b.l); prevMax = Math.max(prevMax, b.h);
   }
-  let runMax = -Infinity, bestDrop = Infinity;
-  for (let x = 0; x < k.length; x++){
-    runMax = Math.max(runMax, highs[x]);
-    const r = lows[x] / runMax;
-    if (r < bestDrop){ bestDrop = r; }
-  }
-  return {rise: (bestRise - 1) * 100, drop: (1 - bestDrop) * 100, open4: k[k.length - 4].o,
+  const last = q > j ? "drop" : j > q ? "rise" : (k[q].c < k[q].o ? "drop" : "rise");
+  return {rise: (bestRise - 1) * 100, drop: (1 - bestDrop) * 100, last, open4: k[k.length - 4].o,
           minutesAgoPeak: (k.length - 1 - j) * 15};
 }
 
@@ -388,9 +388,12 @@ function render(){
   liveCandles(); findNewCandidates();
   calc.moves = [...calc.kl].map(([s, it]) => ({s, hv: it.hv, ...analyzeMoves(it.k)}));
   const byRise = (a, b) => b.rise - a.rise, byDrop = (a, b) => b.drop - a.drop;
-  const rockets = calc.moves.filter(m => m.rise >= CFG.ROCKET_PCT).sort(byRise);
-  const rockets2 = calc.moves.filter(m => m.rise >= CFG.ROCKET2_PCT && m.rise < CFG.ROCKET_PCT).sort(byRise);
-  const dumps2 = calc.moves.filter(m => m.drop >= CFG.DUMP2_PCT).sort(byDrop);
+  // монета с ростом и обвалом за сутки идёт в блок того движения, которое было последним
+  const isDump = m => m.drop >= CFG.DUMP2_PCT && (m.rise < CFG.ROCKET2_PCT || m.last === "drop");
+  const isRocket = m => m.rise >= CFG.ROCKET2_PCT && !isDump(m);
+  const rockets = calc.moves.filter(m => isRocket(m) && m.rise >= CFG.ROCKET_PCT).sort(byRise);
+  const rockets2 = calc.moves.filter(m => isRocket(m) && m.rise < CFG.ROCKET_PCT).sort(byRise);
+  const dumps2 = calc.moves.filter(isDump).sort(byDrop);
   const vol = calc.volume.slice().sort((a, b) => b.hv.now / b.hv.prev - a.hv.now / a.hv.prev);
 
   fill("rockets", rockets, `Ракет с ростом ${CFG.ROCKET_PCT}+% сегодня нет.`, ["час", "рост"],
@@ -464,9 +467,10 @@ function renderWatch(){
   const h1 = (t.c / m.open4 - 1) * 100, d24 = t.o ? (t.c / t.o - 1) * 100 : null;
   const tags = [];
   const liquid = t.q >= CFG.MIN_DAY_USD;
-  if (liquid && m.rise >= CFG.ROCKET_PCT) tags.push(`🚀 ракета ${CFG.ROCKET_PCT}%+`);
-  else if (liquid && m.rise >= CFG.ROCKET2_PCT) tags.push(`🚀 ракета ${CFG.ROCKET2_PCT}%+`);
-  if (liquid && m.drop >= CFG.DUMP2_PCT) tags.push(`💥 обвал ${CFG.DUMP2_PCT}%+`);
+  const dumpNow = m.drop >= CFG.DUMP2_PCT && (m.rise < CFG.ROCKET2_PCT || m.last === "drop");
+  if (liquid && !dumpNow && m.rise >= CFG.ROCKET_PCT) tags.push(`🚀 ракета ${CFG.ROCKET_PCT}%+`);
+  else if (liquid && !dumpNow && m.rise >= CFG.ROCKET2_PCT) tags.push(`🚀 ракета ${CFG.ROCKET2_PCT}%+`);
+  if (liquid && dumpNow) tags.push(`💥 обвал ${CFG.DUMP2_PCT}%+`);
   if (watch.hv && watch.hv.prev > 0 && watch.hv.now >= CFG.VOL_MIN_HOUR_USD && watch.hv.now / watch.hv.prev >= CFG.VOL_MULT) tags.push("💰 объём ×2+");
   const tag = tags.length ? `<span class="tag hot">${tags.join(" · ")}</span>` : `<span class="tag">спокойно</span>`;
   const vt = volTrend(watch.hv);
