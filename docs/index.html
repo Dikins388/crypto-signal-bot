@@ -103,6 +103,11 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;margin:16px 0 4px;l
 .grid .wide{grid-column:1/-1}
 .watch .vol{margin-top:12px;font-size:14px;color:var(--muted)}
 .watch .vol b{color:var(--text)}
+.lv{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+.lvh{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+.lvon{color:var(--up)} .lvoff{color:var(--muted)}
+.lvrow{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:5px 0;font-size:14px;color:var(--muted)}
+.lvrow b{font-size:16px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .spark{display:block;width:100%;height:64px;margin-top:12px}
 .watch .note{font-size:12.5px;color:var(--muted);margin-top:8px}
 </style>
@@ -159,6 +164,7 @@ const CFG = {
                     "PAXG","WBTC","WBETH","BFUSD","XUSD","RLUSD","PYUSD","XAUT"]),
   REST: ["https://data-api.binance.vision", "https://api.binance.com", "https://api1.binance.com"],
   WS: "wss://data-stream.binance.vision/ws/!miniTicker@arr",
+  WS_BASE: "wss://data-stream.binance.vision/ws/",
   CONCURRENCY: 8,
 };
 const BAR = 15 * 60 * 1000;
@@ -419,12 +425,81 @@ async function watchCoin(base){
   const s = base + "USDT";
   try{ localStorage.setItem("nyuh_watch", base); }catch(e){}
   $("q").value = base; $("qClear").hidden = false; $("sugg").hidden = true;
+  stopWatchStream();
   if (!tick.has(s)){
     watch = {s, err: tick.size ? `Монеты ${base} нет среди пар к USDT на споте Binance (стейблкоины не показываем).` : null, loading: !tick.size};
     renderWatch(); return;
   }
   watch = {s, loading: true}; renderWatch();
   await loadWatchCandles();
+  await loadWatchMinutes();
+  startWatchStream(s);
+}
+// ---- Объём онлайн по выбранной монете ------------------------------------
+// Минутные свечи за последний час (REST) + каждая сделка из потока aggTrade прибавляется к текущей минуте.
+// Раз в минуту сверяемся с Binance, чтобы не накапливалась погрешность.
+async function loadWatchMinutes(){
+  if (!watch || !tick.has(watch.s)) return;
+  const s = watch.s;
+  try{
+    const raw = await api(`/api/v3/klines?symbol=${s}&interval=1m&limit=61`);
+    if (!watch || watch.s !== s) return;
+    watch.min = raw.map(b => ({t: +b[0], q: +b[7], tb: +b[10]}));
+  }catch(e){}
+}
+let wws = null, wwsTimer = null;
+function stopWatchStream(){
+  if (wws){ wws.onclose = wws.onerror = wws.onmessage = null; try{ wws.close(); }catch(e){} wws = null; }
+  clearInterval(wwsTimer); wwsTimer = null;
+}
+function startWatchStream(s){
+  stopWatchStream();
+  wwsTimer = setInterval(() => { if (watch && watch.s === s) loadWatchMinutes(); }, 60000);
+  try{ wws = new WebSocket(CFG.WS_BASE + s.toLowerCase() + "@aggTrade"); }catch(e){ return; }
+  wws.onmessage = m => {
+    const d = JSON.parse(m.data);
+    if (!watch || watch.s !== s || !watch.min) return;
+    const usdq = +d.p * +d.q, t = d.T - d.T % 60000;
+    let last = watch.min[watch.min.length - 1];
+    if (!last || t > last.t){ last = {t, q: 0, tb: 0}; watch.min.push(last); if (watch.min.length > 61) watch.min.shift(); }
+    else if (t < last.t) return;
+    last.q += usdq; if (!d.m) last.tb += usdq;          // m = покупатель мейкер, то есть сделка продажи
+    watch.lastTrade = {p: +d.p, usd: usdq, buy: !d.m, T: d.T};
+    watch.trades = (watch.trades || 0) + 1;
+  };
+  wws.onclose = wws.onerror = () => {
+    if (wws){ wws.onclose = wws.onerror = null; }
+    setTimeout(() => { if (watch && watch.s === s) startWatchStream(s); }, 3000);
+  };
+}
+const money = x => "$" + Math.round(x).toLocaleString("ru-RU");
+function liveVal(key, val, text){          // зелёный, если выросло с прошлой секунды, красный, если упало
+  const prev = watch.lv[key];
+  let cls = watch.lc[key] || "vflat";
+  if (prev != null && val > prev) cls = "vup"; else if (prev != null && val < prev) cls = "vdown";
+  watch.lv[key] = val; watch.lc[key] = cls;
+  return `<b class="${cls}">${text}</b>`;
+}
+function liveVolume(t){
+  if (!watch.min || !watch.min.length) return `<div class="lv"><div class="lvh">Объём онлайн</div><div class="note">Загружаю сделки…</div></div>`;
+  watch.lv = watch.lv || {}; watch.lc = watch.lc || {};
+  const now = Date.now(), curMin = now - now % 60000, cur15 = now - now % BAR;
+  const hour = watch.min.filter(b => b.t > curMin - 60 * 60000);
+  const sum = (a, f) => a.reduce((x, b) => x + f(b), 0);
+  const qh = sum(hour, b => b.q), tbh = sum(hour, b => b.tb);
+  const q15 = sum(watch.min.filter(b => b.t >= cur15), b => b.q);
+  const lastB = watch.min[watch.min.length - 1], q1 = lastB && lastB.t === curMin ? lastB.q : 0;
+  const buys = qh > 0 ? tbh / qh * 100 : null;
+  const lt = watch.lastTrade;
+  const ago = lt ? Math.max(0, Math.round((now - lt.T) / 1000)) : null;
+  return `<div class="lv"><div class="lvh">Объём онлайн <span class="${wws && wws.readyState === 1 ? "lvon" : "lvoff"}">●</span></div>
+    <div class="lvrow"><span>За 24 часа</span>${liveVal("d", t.q, money(t.q))}</div>
+    <div class="lvrow"><span>За последние 60 минут</span>${liveVal("h", qh, money(qh))}</div>
+    <div class="lvrow"><span>Текущая 15-минутка</span>${liveVal("m15", q15, money(q15))}</div>
+    <div class="lvrow"><span>Текущая минута</span>${liveVal("m1", q1, money(q1))}</div>
+    <div class="lvrow"><span>Покупки за 60 минут</span>${buys == null ? "<b>–</b>" : liveVal("b", buys, buys.toFixed(1) + "%")}</div>
+    ${lt ? `<div class="lvrow"><span>Последняя сделка${ago > 1 ? `, ${ago} с назад` : ""}</span><b class="${lt.buy ? "vup" : "vdown"}">${lt.buy ? "покупка" : "продажа"} ${money(lt.usd)}</b></div>` : ""}
+  </div>`;
 }
 async function loadWatchCandles(){
   if (!watch || !tick.has(watch.s)) return;
@@ -437,6 +512,7 @@ async function loadWatchCandles(){
   renderWatch();
 }
 function unwatch(){
+  stopWatchStream();
   watch = null; $("q").value = ""; $("qClear").hidden = true; $("sugg").hidden = true;
   try{ localStorage.removeItem("nyuh_watch"); }catch(e){}
   renderWatch();
@@ -484,9 +560,9 @@ function renderWatch(){
       <div>Мин. за сутки<b>${price(t.l)}</b></div>
       <div class="wide">Макс. за сутки<b>${price(t.h)}</b></div>
     </div>
-    <div class="vol">${vt ? vt.replace("объём", "Объём за час:") : "Объём за час: мало данных"}</div>
+    ${liveVolume(t)}
     ${spark(k)}
-    <div class="note">Цена обновляется каждую секунду, объём за час после каждой 15-минутной свечи. График за последние 24 часа.</div>`;
+    <div class="note">Цена и объём онлайн обновляются каждую секунду (объём считается по каждой сделке на Binance): зелёный — вырос, красный — уменьшился. «За 24 часа» и «за 60 минут» — скользящие окна, поэтому могут и уменьшаться, когда старые сделки выходят из окна. График за последние 24 часа.</div>`;
 }
 // подсказки при вводе
 let suggIdx = -1;
