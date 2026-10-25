@@ -57,25 +57,35 @@ def scan_moves(tickers: dict) -> list[dict]:
         lows, highs = k["low"].to_numpy(), k["high"].to_numpy()
         price = tickers[sym]["price"]
 
-        run_min = np.minimum.accumulate(lows)
-        rise_r = highs / run_min
+        # Рост и падение считаем только от одной свечи к следующей: внутри одной 15-минутки
+        # не видно, что было раньше, максимум или минимум (25.10: ложный «обвал» у T из одной свечи).
+        prev_min = np.concatenate(([np.inf], np.minimum.accumulate(lows)[:-1]))
+        rise_r = highs / prev_min                        # первая свеча даёт 0
         j = int(np.argmax(rise_r))                       # вершина
-        i = int(np.argmin(lows[: j + 1]))                # дно перед ней
-        run_max = np.maximum.accumulate(highs)
-        drop_r = lows / run_max
+        i = int(np.argmin(lows[:j])) if j > 0 else 0     # дно в свечах до неё
+        prev_max = np.concatenate(([0.0], np.maximum.accumulate(highs)[:-1]))
+        with np.errstate(divide="ignore"):
+            drop_r = np.where(prev_max > 0, lows / prev_max, np.inf)
         q = int(np.argmin(drop_r))                       # дно
-        p = int(np.argmax(highs[: q + 1]))               # вершина перед ним
+        p = int(np.argmax(highs[:q])) if q > 0 else 0    # вершина в свечах до него
+        if q > j:
+            last = "drop"                                # последним было падение
+        elif j > q:
+            last = "rise"
+        else:
+            last = "drop" if k["close"].iloc[q] < k["open"].iloc[q] else "rise"
 
         out.append({
             "symbol": sym,
             "h1": (price / k["open"].iloc[-4] - 1) * 100,   # примерно за последний час
             "d24": tickers[sym]["change_pct"],
             # рост (используется и для личных уведомлений о ракетах)
-            "rise": (rise_r[j] - 1) * 100, "minutes": (j - i + 1) * 15,
-            "low": float(run_min[j]), "peak": float(highs[j]),
+            "rise": max(0.0, (rise_r[j] - 1) * 100), "minutes": (j - i + 1) * 15,
+            "low": float(lows[i]), "peak": float(highs[j]),
             "peak_ago_min": (len(k) - 1 - j) * 15, "from_peak": (price / highs[j] - 1) * 100,
             # падение
-            "drop": (1 - drop_r[q]) * 100, "drop_minutes": (q - p + 1) * 15,
+            "drop": max(0.0, (1 - drop_r[q]) * 100), "drop_minutes": (q - p + 1) * 15,
+            "last": last,                                # какое из двух движений было последним
             # оборот в USDT за последний час и за предыдущий (по закрытым 15-минуткам)
             **_hour_volumes(k),
         })
@@ -153,12 +163,15 @@ def volume_block(items: list[dict]) -> list[str]:
 
 
 def find_rockets(tickers: dict) -> list[dict]:
-    rk = [m for m in scan_moves(tickers) if m["rise"] >= C.ROCKET_MIN_PCT]
+    """Ракеты. Если монета за сутки и выросла, и обвалилась, она идёт в тот блок, чьё движение было позже."""
+    rk = [m for m in scan_moves(tickers) if m["rise"] >= C.ROCKET_MIN_PCT
+          and not (m["drop"] >= C.DUMP_MIN_PCT and m["last"] == "drop")]
     return sorted(rk, key=lambda m: -m["rise"])
 
 
 def find_dumps(tickers: dict) -> list[dict]:
-    dp = [m for m in scan_moves(tickers) if m["drop"] >= C.DUMP_MIN_PCT]
+    dp = [m for m in scan_moves(tickers) if m["drop"] >= C.DUMP_MIN_PCT
+          and not (m["rise"] >= C.ROCKET_MIN_PCT and m["last"] == "rise")]
     return sorted(dp, key=lambda m: -m["drop"])
 
 
