@@ -134,8 +134,8 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;margin:16px 0 4px;l
     </div>
   </div>
 
-  <section id="moves"><h2>📈 Движение 30%+ за сутки <small></small></h2><div class="loading">Считаю…</div></section>
-  <section id="rockets"><h2>🚀 Ракеты 80%+ <small></small></h2><div class="loading">Считаю…</div></section>
+  <section id="moves"><h2 data-t="move">📈 Движение 50%+ за сутки <small></small></h2><div class="loading">Считаю…</div></section>
+  <section id="rockets"><h2 data-t="rocket">🚀 Ракеты 100%+ <small></small></h2><div class="loading">Считаю…</div></section>
   <section id="dumps"><h2>💥 Обвалы 55%+ <small></small></h2><div class="loading">Считаю…</div></section>
   <section id="volume"><h2>💰 Объём ×2+ за час <small></small></h2><div class="loading">Считаю…</div></section>
 
@@ -147,7 +147,7 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;margin:16px 0 4px;l
 "use strict";
 // ---- Настройки: те же, что у бота в канале -------------------------------
 const CFG = {
-  MOVE_PCT: 30, ROCKET_PCT: 80, DUMP_PCT: 55,
+  MOVE_PCT: 50, ROCKET_PCT: 100, DUMP_PCT: 55,
   MIN_DAY_USD: 1_000_000,        // для движения, ракет и обвалов: оборот за сутки
   VOL_MULT: 2, VOL_MIN_HOUR_USD: 700_000,   // оборот за последний час от $700 тыс.
   EXCLUDE: new Set(["USDC","FDUSD","TUSD","BUSD","USDP","DAI","EUR","EURI","AEUR","USDE","USD1","U",
@@ -459,7 +459,7 @@ function renderWatch(){
   const tags = [];
   if (m.rise >= CFG.ROCKET_PCT) tags.push("🚀 ракета");
   if (m.drop >= CFG.DUMP_PCT) tags.push("💥 обвал");
-  if (!tags.length && Math.max(m.rise, m.drop) >= CFG.MOVE_PCT && t.q >= CFG.MIN_DAY_USD) tags.push("📈 движение 30%+");
+  if (!tags.length && Math.max(m.rise, m.drop) >= CFG.MOVE_PCT && t.q >= CFG.MIN_DAY_USD) tags.push(`📈 движение ${CFG.MOVE_PCT}%+`);
   if (watch.hv && watch.hv.prev > 0 && watch.hv.now >= CFG.VOL_MIN_HOUR_USD && watch.hv.now / watch.hv.prev >= CFG.VOL_MULT) tags.push("💰 объём ×2+");
   const tag = tags.length ? `<span class="tag hot">${tags.join(" · ")}</span>` : `<span class="tag">спокойно</span>`;
   const vt = volTrend(watch.hv);
