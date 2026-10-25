@@ -47,7 +47,7 @@ h1 span{color:var(--accent)}
 section{background:var(--card);border:1px solid var(--line);border-radius:14px;margin:0 0 12px;overflow:hidden}
 section h2{font-size:16.5px;margin:0;padding:12px 14px 4px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 section h2 small{font-size:12.5px;color:var(--muted);font-weight:500}
-.cols{display:grid;grid-template-columns:1fr 64px 64px 30px;gap:8px;padding:2px 14px 6px;font-size:11.5px;color:var(--muted);
+.cols{display:grid;grid-template-columns:1fr 64px 64px 30px;gap:8px;padding:2px 8px 6px 14px;font-size:11.5px;color:var(--muted);
   text-transform:uppercase;letter-spacing:.4px}
 .cols span:not(:first-child),.row .n{text-align:right}
 .row{display:grid;grid-template-columns:1fr 64px 64px 30px;gap:8px;align-items:center;padding:9px 8px 9px 14px;border-top:1px solid var(--line);
@@ -57,6 +57,8 @@ section h2 small{font-size:12.5px;color:var(--muted);font-weight:500}
 .hiddenbar{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13.5px;color:var(--muted);
   background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:8px 8px 8px 14px;margin:0 0 12px}
 .vup{color:var(--up);font-weight:600} .vdown{color:var(--down);font-weight:600} .vflat{color:var(--text);font-weight:600} .vwait{color:var(--muted)}
+.w4 .cols,.w4 .row{grid-template-columns:1fr 56px 56px 74px 30px;gap:6px}
+.vcol{font-size:14px}
 .legend{font-size:12px;color:var(--muted);padding:0 14px 6px}
 .hiddenbar button{border:0;background:var(--chip);color:var(--text);font-size:13.5px;padding:7px 12px;border-radius:9px;cursor:pointer}
 .row:active{background:var(--chip)}
@@ -138,11 +140,10 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;margin:16px 0 4px;l
 
   <section id="rockets"><h2>🚀 Ракеты 100%+ <small></small></h2><div class="loading">Считаю…</div></section>
   <section id="rockets2"><h2>🚀 Ракеты 30%+ <small></small></h2><div class="loading">Считаю…</div></section>
-  <section id="dumps"><h2>💥 Обвалы 55%+ <small></small></h2><div class="loading">Считаю…</div></section>
   <section id="dumps2"><h2>💥 Обвалы 30%+ <small></small></h2><div class="loading">Считаю…</div></section>
-  <section id="volume"><h2>💰 Объём ×2+ за час <small></small></h2><div class="loading">Считаю…</div></section>
+  <section id="volume" class="w4"><h2>💰 Объём ×2+ за час <small></small></h2><div class="loading">Считаю…</div></section>
 
-  <footer>Цены, ракеты и обвалы обновляются каждую секунду, объём ×2+ после каждой 15-минутной свечи, цвет суммы объёма раз в 30 секунд.<br>
+  <footer>Цены, ракеты и обвалы обновляются каждую секунду, объём ×2+ после каждой 15-минутной свечи, цвет объёма раз в 30 секунд.<br>
   Нажми на монету, чтобы открыть её график на TradingView; × скрывает монету до следующего открытия страницы.<br>Данные Binance. Не финансовая рекомендация.</footer>
 </div>
 
@@ -151,7 +152,7 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;margin:16px 0 4px;l
 // ---- Настройки: те же, что у бота в канале -------------------------------
 const CFG = {
   ROCKET_PCT: 100, ROCKET2_PCT: 30,   // ракеты: рост от дна до вершины за сутки; 30%+ = от 30 до 100%
-  DUMP_PCT: 55, DUMP2_PCT: 30,        // обвалы: падение от вершины до дна за сутки; 30%+ = от 30 до 55%
+  DUMP2_PCT: 30,                      // обвалы: падение от вершины до дна за сутки, все от 30%
   MIN_DAY_USD: 1_000_000,        // для движения, ракет и обвалов: оборот за сутки
   VOL_MULT: 2, VOL_MIN_HOUR_USD: 700_000,   // оборот за последний час от $700 тыс.
   EXCLUDE: new Set(["USDC","FDUSD","TUSD","BUSD","USDP","DAI","EUR","EURI","AEUR","USDE","USD1","U",
@@ -356,7 +357,7 @@ function volTrend(hv){
 }
 const esc = s => s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const prevPrice = new Map();
-function row(it, third, extra, cols){
+function row(it, third, extra, fourth){
   const t = tick.get(it.s) || {};
   const h1 = it.open4 ? (t.c / it.open4 - 1) * 100 : (it.hv ? (t.c / it.hv.open4 - 1) * 100 : null);
   const d24 = t.o ? (t.c / t.o - 1) * 100 : null;
@@ -365,7 +366,7 @@ function row(it, third, extra, cols){
   const b = baseOf(it.s);
   return `<div class="row${fl}" data-b="${b}">
     <span class="coin"><b>${esc(b)}</b><span class="px">${price(t.c)}</span></span>
-    ${pct(h1)}${third === undefined ? pct(d24) : third}
+    ${pct(h1)}${third === undefined ? pct(d24) : third}${fourth || ""}
     <button class="x" data-hide="${it.s}" aria-label="Скрыть ${esc(b)}">×</button>
     ${extra ? `<span class="extra">${extra}</span>` : ""}</div>`;
 }
@@ -375,7 +376,7 @@ function fill(id, all, empty, heads, mkRow, legend){
   sec.querySelector("small").textContent = (items.length ? items.length + " шт." : "") + (nh ? ` · скрыто ${nh}` : "");
   if (!items.length && nh) empty = "Все монеты этого блока скрыты.";
   const body = items.length
-    ? `<div class="cols"><span>монета</span><span>${heads[0]}</span><span>${heads[1]}</span><span></span></div>` + items.map(mkRow).join("")
+    ? `<div class="cols"><span>монета</span>${heads.map(h => `<span>${h}</span>`).join("")}<span></span></div>` + items.map(mkRow).join("")
     : `<div class="empty">${empty}</div>`;
   sec.innerHTML = sec.querySelector("h2").outerHTML + (items.length && legend ? legend : "") + body;
 }
@@ -389,22 +390,19 @@ function render(){
   const byRise = (a, b) => b.rise - a.rise, byDrop = (a, b) => b.drop - a.drop;
   const rockets = calc.moves.filter(m => m.rise >= CFG.ROCKET_PCT).sort(byRise);
   const rockets2 = calc.moves.filter(m => m.rise >= CFG.ROCKET2_PCT && m.rise < CFG.ROCKET_PCT).sort(byRise);
-  const dumps = calc.moves.filter(m => m.drop >= CFG.DUMP_PCT).sort(byDrop);
-  const dumps2 = calc.moves.filter(m => m.drop >= CFG.DUMP2_PCT && m.drop < CFG.DUMP_PCT).sort(byDrop);
+  const dumps2 = calc.moves.filter(m => m.drop >= CFG.DUMP2_PCT).sort(byDrop);
   const vol = calc.volume.slice().sort((a, b) => b.hv.now / b.hv.prev - a.hv.now / a.hv.prev);
 
   fill("rockets", rockets, `Ракет с ростом ${CFG.ROCKET_PCT}+% сегодня нет.`, ["час", "рост"],
        m => row(m, pct(m.rise), volTrend(m.hv)));
   fill("rockets2", rockets2, `Монет с ростом от ${CFG.ROCKET2_PCT} до ${CFG.ROCKET_PCT}% сегодня нет.`, ["час", "рост"],
        m => row(m, pct(m.rise), volTrend(m.hv)));
-  fill("dumps", dumps, `Монет с обвалом ${CFG.DUMP_PCT}+% сегодня нет.`, ["час", "обвал"],
+  fill("dumps2", dumps2, `Монет с обвалом ${CFG.DUMP2_PCT}+% сегодня нет.`, ["час", "обвал"],
        m => row(m, pct(-m.drop), volTrend(m.hv)));
-  fill("dumps2", dumps2, `Монет с обвалом от ${CFG.DUMP2_PCT} до ${CFG.DUMP_PCT}% сегодня нет.`, ["час", "обвал"],
-       m => row(m, pct(-m.drop), volTrend(m.hv)));
-  fill("volume", vol, `Монет с ростом объёма ×${CFG.VOL_MULT}+ за час сейчас нет.`, ["час", "сутки"],
-       m => row(m, undefined, `⬆️ объём в <b>${(m.hv.now / m.hv.prev).toFixed(1)} раза</b> больше `
-         + `<span class="${paceCls(m.s)}">(${usd(m.hv.now)})</span>`),
-       `<div class="legend">сумма: <span class="vup">зелёная</span> — объём сейчас растёт, <span class="vflat">белая</span> — стоит, <span class="vdown">красная</span> — падает</div>`);
+  fill("volume", vol, `Монет с ростом объёма ×${CFG.VOL_MULT}+ за час сейчас нет.`, ["час", "сутки", "объём"],
+       m => row(m, undefined, `⬆️ объём за час в <b>${(m.hv.now / m.hv.prev).toFixed(1)} раза</b> больше прошлого`,
+                `<span class="n vcol ${paceCls(m.s)}">${usd(m.hv.now)}</span>`),
+       `<div class="legend">объём за час: <span class="vup">зелёный</span> — сейчас растёт, <span class="vflat">белый</span> — стоит, <span class="vdown">красный</span> — падает</div>`);
   setLive();
 }
 // ---- Слежка за одной монетой ---------------------------------------------
@@ -468,8 +466,7 @@ function renderWatch(){
   const liquid = t.q >= CFG.MIN_DAY_USD;
   if (liquid && m.rise >= CFG.ROCKET_PCT) tags.push(`🚀 ракета ${CFG.ROCKET_PCT}%+`);
   else if (liquid && m.rise >= CFG.ROCKET2_PCT) tags.push(`🚀 ракета ${CFG.ROCKET2_PCT}%+`);
-  if (liquid && m.drop >= CFG.DUMP_PCT) tags.push(`💥 обвал ${CFG.DUMP_PCT}%+`);
-  else if (liquid && m.drop >= CFG.DUMP2_PCT) tags.push(`💥 обвал ${CFG.DUMP2_PCT}%+`);
+  if (liquid && m.drop >= CFG.DUMP2_PCT) tags.push(`💥 обвал ${CFG.DUMP2_PCT}%+`);
   if (watch.hv && watch.hv.prev > 0 && watch.hv.now >= CFG.VOL_MIN_HOUR_USD && watch.hv.now / watch.hv.prev >= CFG.VOL_MULT) tags.push("💰 объём ×2+");
   const tag = tags.length ? `<span class="tag hot">${tags.join(" · ")}</span>` : `<span class="tag">спокойно</span>`;
   const vt = volTrend(watch.hv);
@@ -526,8 +523,25 @@ function setupSearch(){
   $("qClear").addEventListener("click", unwatch);
 }
 
-// Нажатие на монету открывает её график на TradingView (пара Binance, откуда и данные)
-const tradeUrl = b => `https://www.tradingview.com/chart/?symbol=BINANCE:${encodeURIComponent(b)}USDT`;
+// Нажатие на монету открывает её график Bybit на TradingView (данные страницы при этом с Binance).
+// Есть на споте Bybit -> BYBIT:XUSDT; только на фьючерсах -> BYBIT:XUSDT.P (или 1000XUSDT.P);
+// нет на Bybit совсем -> график Binance, чтобы не открывалась ошибка.
+const bybit = {spot: null, perp: null};
+async function loadBybit(){
+  try{
+    const get = async cat => new Set((await (await fetch(`https://api.bybit.com/v5/market/tickers?category=${cat}`)).json()).result.list.map(x => x.symbol));
+    const [sp, pp] = await Promise.all([get("spot"), get("linear")]);
+    bybit.spot = sp; bybit.perp = pp;
+  }catch(e){ /* Bybit недоступен: ссылки по умолчанию на спот Bybit */ }
+}
+function tvSymbol(b){
+  if (!bybit.spot) return `BYBIT:${b}USDT`;
+  if (bybit.spot.has(b + "USDT")) return `BYBIT:${b}USDT`;
+  for (const pre of ["", "1000", "10000", "1000000"])
+    if (bybit.perp.has(pre + b + "USDT")) return `BYBIT:${pre}${b}USDT.P`;
+  return `BINANCE:${b}USDT`;
+}
+const tradeUrl = b => `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tvSymbol(b)).replace("%3A", ":")}`;
 
 // ---- Скрытые монеты: только до закрытия или обновления страницы ---------
 const hidden = new Set();
@@ -608,6 +622,7 @@ async function loadFG(){
 (async function start(){
   loadFG(); setInterval(loadFG, 30 * 60 * 1000);
   setupSearch(); setupRows();
+  loadBybit(); setInterval(loadBybit, 3 * 3600 * 1000);
   let saved = null; try{ saved = localStorage.getItem("nyuh_watch"); }catch(e){}
   try{ await loadTickers(); }catch(e){ showErr("Не могу получить данные Binance: " + e.message); }
   if (saved) watchCoin(saved);
