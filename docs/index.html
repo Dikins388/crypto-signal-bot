@@ -144,11 +144,10 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;margin:16px 0 4px;l
   </div>
 
   <section id="rockets"><h2>🚀 Ракеты 100%+ <small></small></h2><div class="loading">Считаю…</div></section>
-  <section id="rockets2"><h2>🚀 Ракеты 30%+ <small></small></h2><div class="loading">Считаю…</div></section>
-  <section id="dumps2"><h2>💥 Обвалы 30%+ <small></small></h2><div class="loading">Считаю…</div></section>
+  <section id="rockets2"><h2>🚀 Ракеты 23%+ <small></small></h2><div class="loading">Считаю…</div></section>
   <section id="volume" class="w4"><h2>💰 Объём ×2+ за час <small></small></h2><div class="loading">Считаю…</div></section>
 
-  <footer>Цены, ракеты и обвалы обновляются каждую секунду, объём ×2+ после каждой 15-минутной свечи, цвет объёма раз в 30 секунд.<br>
+  <footer>Цены и ракеты обновляются каждую секунду, объём ×2+ после каждой 15-минутной свечи, цвет объёма раз в 30 секунд.<br>
   Нажми на монету, чтобы открыть её график на TradingView; × скрывает монету до следующего открытия страницы.<br>Данные Binance. Не финансовая рекомендация.</footer>
 </div>
 
@@ -156,8 +155,8 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;margin:16px 0 4px;l
 "use strict";
 // ---- Настройки: те же, что у бота в канале -------------------------------
 const CFG = {
-  ROCKET_PCT: 100, ROCKET2_PCT: 30,   // ракеты: рост от дна до вершины за сутки; 30%+ = от 30 до 100%
-  DUMP2_PCT: 30,                      // обвалы: падение от вершины до дна за сутки, все от 30%
+  ROCKET_PCT: 100, ROCKET2_PCT: 23,   // ракеты: рост от дна до вершины за сутки; 23%+ = от 23 до 100% (с 27.10)
+  DUMP2_PCT: 30,                      // блока обвалов нет (убран 27.10); монета, которая после роста упала на 30%+, из ракет уходит
   MIN_DAY_USD: 1_000_000,        // для движения, ракет и обвалов: оборот за сутки
   VOL_MULT: 2, VOL_MIN_HOUR_USD: 700_000,   // оборот за последний час от $700 тыс.
   EXCLUDE: new Set(["USDC","FDUSD","TUSD","BUSD","USDP","DAI","EUR","EURI","AEUR","USDE","USD1","U",
@@ -274,7 +273,7 @@ async function recalc(){
   try{
     if (!tick.size) await loadTickers();
     if (watch && !watch.err) loadWatchCandles();
-    const need = 1 + Math.min(CFG.ROCKET2_PCT, CFG.DUMP2_PCT) / 100;
+    const need = 1 + CFG.ROCKET2_PCT / 100;
     const syms = [...tick.keys()];
     const moveCands = new Set(syms.filter(s => { const t = tick.get(s);
       return t.q >= CFG.MIN_DAY_USD && t.l > 0 && t.h / t.l >= need; }));
@@ -318,7 +317,7 @@ function liveCandles(){
 }
 const loadingNew = new Set();
 function findNewCandidates(){   // монета только что резко пошла: подгружаем её свечи, не дожидаясь 15 минут
-  const need = 1 + Math.min(CFG.ROCKET2_PCT, CFG.DUMP2_PCT) / 100;
+  const need = 1 + CFG.ROCKET2_PCT / 100;
   for (const [s, t] of tick){
     if (calc.kl.has(s) || loadingNew.has(s) || loadingNew.size >= 4) continue;
     if (t.q < CFG.MIN_DAY_USD || !(t.l > 0) || t.h / t.l < need) continue;
@@ -393,21 +392,18 @@ function render(){
   if (!calc){ setLive(); return; }
   liveCandles(); findNewCandidates();
   calc.moves = [...calc.kl].map(([s, it]) => ({s, hv: it.hv, ...analyzeMoves(it.k)}));
-  const byRise = (a, b) => b.rise - a.rise, byDrop = (a, b) => b.drop - a.drop;
+  const byRise = (a, b) => b.rise - a.rise;
   // монета с ростом и обвалом за сутки идёт в блок того движения, которое было последним
   const isDump = m => m.drop >= CFG.DUMP2_PCT && (m.rise < CFG.ROCKET2_PCT || m.last === "drop");
   const isRocket = m => m.rise >= CFG.ROCKET2_PCT && !isDump(m);
   const rockets = calc.moves.filter(m => isRocket(m) && m.rise >= CFG.ROCKET_PCT).sort(byRise);
   const rockets2 = calc.moves.filter(m => isRocket(m) && m.rise < CFG.ROCKET_PCT).sort(byRise);
-  const dumps2 = calc.moves.filter(isDump).sort(byDrop);
   const vol = calc.volume.slice().sort((a, b) => b.hv.now / b.hv.prev - a.hv.now / a.hv.prev);
 
   fill("rockets", rockets, `Ракет с ростом ${CFG.ROCKET_PCT}+% сегодня нет.`, ["час", "рост"],
        m => row(m, pct(m.rise), volTrend(m.hv)));
   fill("rockets2", rockets2, `Монет с ростом от ${CFG.ROCKET2_PCT} до ${CFG.ROCKET_PCT}% сегодня нет.`, ["час", "рост"],
        m => row(m, pct(m.rise), volTrend(m.hv)));
-  fill("dumps2", dumps2, `Монет с обвалом ${CFG.DUMP2_PCT}+% сегодня нет.`, ["час", "обвал"],
-       m => row(m, pct(-m.drop), volTrend(m.hv)));
   fill("volume", vol, `Монет с ростом объёма ×${CFG.VOL_MULT}+ за час сейчас нет.`, ["час", "сутки", "объём"],
        m => row(m, undefined, `⬆️ объём за час в <b>${(m.hv.now / m.hv.prev).toFixed(1)} раза</b> больше прошлого`,
                 `<span class="n vcol ${paceCls(m.s)}">${usd(m.hv.now)}</span>`),
