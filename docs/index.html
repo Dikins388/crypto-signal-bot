@@ -33,6 +33,10 @@ header{position:sticky;top:0;z-index:5;background:var(--bg);padding:14px 0 10px;
 h1{font-size:22px;margin:0;letter-spacing:.2px}
 h1 span{color:var(--accent)}
 .live{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);white-space:nowrap}
+.tr{display:flex;align-items:center;gap:10px}
+.snd{border:1px solid var(--line);background:var(--card);border-radius:10px;font-size:18px;line-height:1;width:40px;height:36px;cursor:pointer;padding:0}
+.snd.on{border-color:var(--accent);background:rgba(240,185,11,.14)}
+.row.isnew{box-shadow:inset 3px 0 0 var(--accent);background:rgba(240,185,11,.08)}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--flat)}
 .dot.on{background:var(--up);box-shadow:0 0 0 0 var(--up);animation:pulse 2s infinite}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.6)}70%{box-shadow:0 0 0 7px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
@@ -117,7 +121,10 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;margin:16px 0 4px;l
   <header>
     <div class="top">
       <h1>📊 Крипто <span>НЮХ</span></h1>
-      <div class="live"><span class="dot" id="dot"></span><span id="liveText">подключаюсь…</span></div>
+      <div class="tr">
+        <button class="snd" id="snd" aria-label="Звук при новой монете" title="Звук при новой монете">🔕</button>
+        <div class="live"><span class="dot" id="dot"></span><span id="liveText">подключаюсь…</span></div>
+      </div>
     </div>
     <div class="status" id="status">Загружаю данные Binance…</div>
   </header>
@@ -148,7 +155,8 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;margin:16px 0 4px;l
   <section id="volume" class="w4"><h2>💰 Объём ×2+ за час <small></small></h2><div class="loading">Считаю…</div></section>
 
   <footer>Цены и ракеты обновляются каждую секунду, объём ×2+ после каждой 15-минутной свечи, цвет объёма раз в 30 секунд.<br>
-  Нажми на монету, чтобы открыть её график на TradingView; × скрывает монету до следующего открытия страницы.<br>Данные Binance. Не финансовая рекомендация.</footer>
+  Нажми на монету, чтобы открыть её график на TradingView; × скрывает монету до следующего открытия страницы.<br>
+  🔔 вверху включает звук, когда в любом блоке появляется новая монета (страница должна быть открыта).<br>Данные Binance. Не финансовая рекомендация.</footer>
 </div>
 
 <script>
@@ -369,7 +377,8 @@ function row(it, third, extra, fourth){
   const old = prevPrice.get(it.s); prevPrice.set(it.s, t.c);
   const fl = old && t.c !== old ? (t.c > old ? " flash-up" : " flash-down") : "";
   const b = baseOf(it.s);
-  return `<div class="row${fl}" data-b="${b}">
+  const nw = (newUntil.get(it.s) || 0) > Date.now() ? " isnew" : "";
+  return `<div class="row${fl}${nw}" data-b="${b}">
     <span class="coin"><b>${esc(b)}</b><span class="px">${price(t.c)}</span></span>
     ${pct(h1)}${third === undefined ? pct(d24) : third}${fourth || ""}
     <button class="x" data-hide="${it.s}" aria-label="Скрыть ${esc(b)}">×</button>
@@ -399,6 +408,7 @@ function render(){
   const rockets = calc.moves.filter(m => isRocket(m) && m.rise >= CFG.ROCKET_PCT).sort(byRise);
   const rockets2 = calc.moves.filter(m => isRocket(m) && m.rise < CFG.ROCKET_PCT).sort(byRise);
   const vol = calc.volume.slice().sort((a, b) => b.hv.now / b.hv.prev - a.hv.now / a.hv.prev);
+  checkNew("rockets", rockets, "rocket"); checkNew("rockets2", rockets2, "rocket2"); checkNew("volume", vol, "volume");
 
   fill("rockets", rockets, `Ракет с ростом ${CFG.ROCKET_PCT}+% сегодня нет.`, ["час", "рост"],
        m => row(m, pct(m.rise), volTrend(m.hv)));
@@ -626,6 +636,60 @@ function updateHiddenBar(){
   $("hiddenText").textContent = `Скрыто монет: ${hidden.size} (${[...hidden].map(baseOf).slice(0, 5).join(", ")}${hidden.size > 5 ? "…" : ""})`;
 }
 let touching = false;      // пока палец на экране, список не перерисовываем, чтобы нажатие не потерялось
+// ---- Звук при появлении новой монеты в любом блоке ----------------------
+// Браузер разрешает звук только после нажатия на страницу, поэтому есть кнопка 🔔.
+// Сразу после открытия страницы списки только заполняются, тогда не пищим.
+// Одна и та же монета в одном блоке пищит не чаще раза в 30 минут (если она прыгает около порога).
+let soundOn = false, actx = null;
+const prevIn = new Map(), lastBeep = new Map(), newUntil = new Map();
+try{ soundOn = localStorage.getItem("nyuh_sound") === "1"; }catch(e){}
+function ensureAudio(){
+  try{
+    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === "suspended") actx.resume();
+  }catch(e){}
+}
+function beep(kind){
+  if (!soundOn) return;
+  ensureAudio(); if (!actx) return;
+  const notes = kind === "rocket" ? [880, 1175, 1568] : kind === "rocket2" ? [784, 1047] : [523, 659];
+  const t0 = actx.currentTime + 0.02;
+  notes.forEach((f, i) => {
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = "sine"; o.frequency.value = f;
+    const st = t0 + i * 0.16;
+    g.gain.setValueAtTime(0.0001, st); g.gain.exponentialRampToValueAtTime(0.35, st + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, st + 0.15);
+    o.connect(g).connect(actx.destination); o.start(st); o.stop(st + 0.16);
+  });
+  try{ navigator.vibrate && navigator.vibrate(kind === "rocket" ? [120, 60, 120, 60, 120] : [120, 60, 120]); }catch(e){}
+}
+function checkNew(id, items, kind){
+  const now = Date.now(), cur = new Set(items.filter(m => !hidden.has(m.s)).map(m => m.s));
+  const prev = prevIn.get(id); prevIn.set(id, cur);
+  if (!prev) return;                                  // первое заполнение блока: без звука
+  let fresh = false;
+  for (const s of cur){
+    if (prev.has(s)) continue;
+    const key = id + "|" + s;
+    if (now - (lastBeep.get(key) || 0) < 30 * 60000) continue;
+    lastBeep.set(key, now); newUntil.set(s, now + 60000); fresh = true;
+  }
+  if (fresh) beep(kind);
+}
+function setSound(on){
+  soundOn = on;
+  try{ localStorage.setItem("nyuh_sound", on ? "1" : "0"); }catch(e){}
+  $("snd").textContent = on ? "🔔" : "🔕"; $("snd").classList.toggle("on", on);
+  if (on){ ensureAudio(); beep("rocket2"); }       // короткий пробный сигнал
+}
+function setupSound(){
+  // при открытии не пищим, только показываем сохранённое состояние кнопки
+  $("snd").textContent = soundOn ? "🔔" : "🔕"; $("snd").classList.toggle("on", soundOn);
+  $("snd").addEventListener("click", () => setSound(!soundOn));
+  document.addEventListener("pointerdown", () => { if (soundOn) ensureAudio(); }, {passive: true});
+}
+
 function setupRows(){
   document.addEventListener("pointerdown", () => { touching = true; }, true);
   const up = () => { touching = false; scheduleRender(); };
@@ -697,7 +761,7 @@ async function loadFG(){
 // ---- Старт -------------------------------------------------------------
 (async function start(){
   loadFG(); setInterval(loadFG, 30 * 60 * 1000);
-  setupSearch(); setupRows();
+  setupSearch(); setupRows(); setupSound();
   loadBybit(); setInterval(loadBybit, 3 * 3600 * 1000);
   let saved = null; try{ saved = localStorage.getItem("nyuh_watch"); }catch(e){}
   try{ await loadTickers(); }catch(e){ showErr("Не могу получить данные Binance: " + e.message); }
