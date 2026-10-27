@@ -150,8 +150,8 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;margin:16px 0 4px;l
     </div>
   </div>
 
-  <section id="rockets"><h2>🚀 Ракеты 100%+ <small></small></h2><div class="loading">Считаю…</div></section>
-  <section id="rockets2"><h2>🚀 Ракеты 23%+ <small></small></h2><div class="loading">Считаю…</div></section>
+  <section id="rockets" class="w4"><h2>🚀 Ракеты 100%+ <small></small></h2><div class="loading">Считаю…</div></section>
+  <section id="rockets2" class="w4"><h2>🚀 Ракеты 23%+ <small></small></h2><div class="loading">Считаю…</div></section>
   <section id="volume" class="w4"><h2>💰 Объём ×2+ за час <small></small></h2><div class="loading">Считаю…</div></section>
 
   <footer>Цены и ракеты обновляются каждую секунду, объём ×2+ после каждой 15-минутной свечи, цвет объёма раз в 30 секунд.<br>
@@ -361,6 +361,15 @@ function usd(x){
   if (x >= 1e3) return "$" + (x / 1e3).toFixed(0) + "\u00a0тыс";
   return "$" + x.toFixed(0);
 }
+function volTrendShort(hv){         // для ракет: без суммы, сумма стоит в колонке «объём»
+  if (!hv || !hv.now || !hv.prev) return "";
+  const r = hv.now / hv.prev;
+  if (r >= 1.2) return `⬆️ объём за час растёт в <b>${r.toFixed(1)} раза</b>`;
+  if (r <= 0.8) return `⬇️ объём за час падает в <b>${(1 / r).toFixed(1)} раза</b>`;
+  return `➡️ объём за час стоит`;
+}
+const VOL_LEGEND = `<div class="legend">объём — оборот за последний час; цвет — что с объёмом в последние 15 минут: <span class="vup">зелёный</span> растёт, <span class="vflat">белый</span> стоит, <span class="vdown">красный</span> падает</div>`;
+const volCell = m => `<span class="n vcol ${paceCls(m.s)}">${m.hv && m.hv.now ? usd(m.hv.now) : "–"}</span>`;
 function volTrend(hv){
   if (!hv || !hv.now || !hv.prev) return "";
   const r = hv.now / hv.prev;
@@ -410,14 +419,15 @@ function render(){
   const vol = calc.volume.slice().sort((a, b) => b.hv.now / b.hv.prev - a.hv.now / a.hv.prev);
   checkNew("rockets", rockets, "rocket"); checkNew("rockets2", rockets2, "rocket2"); checkNew("volume", vol, "volume");
 
-  fill("rockets", rockets, `Ракет с ростом ${CFG.ROCKET_PCT}+% сегодня нет.`, ["час", "рост"],
-       m => row(m, pct(m.rise), volTrend(m.hv)));
-  fill("rockets2", rockets2, `Монет с ростом от ${CFG.ROCKET2_PCT} до ${CFG.ROCKET_PCT}% сегодня нет.`, ["час", "рост"],
-       m => row(m, pct(m.rise), volTrend(m.hv)));
+  paceSyms = new Set([...rockets, ...rockets2, ...vol].map(m => m.s));
+  fill("rockets", rockets, `Ракет с ростом ${CFG.ROCKET_PCT}+% сегодня нет.`, ["час", "рост", "объём"],
+       m => row(m, pct(m.rise), volTrendShort(m.hv), volCell(m)), VOL_LEGEND);
+  fill("rockets2", rockets2, `Монет с ростом от ${CFG.ROCKET2_PCT} до ${CFG.ROCKET_PCT}% сегодня нет.`, ["час", "рост", "объём"],
+       m => row(m, pct(m.rise), volTrendShort(m.hv), volCell(m)), VOL_LEGEND);
   fill("volume", vol, `Монет с ростом объёма ×${CFG.VOL_MULT}+ за час сейчас нет.`, ["час", "сутки", "объём"],
        m => row(m, undefined, `⬆️ объём за час в <b>${(m.hv.now / m.hv.prev).toFixed(1)} раза</b> больше прошлого`,
                 `<span class="n vcol ${paceCls(m.s)}">${usd(m.hv.now)}</span>`),
-       `<div class="legend">объём за час: <span class="vup">зелёный</span> — сейчас растёт, <span class="vflat">белый</span> — стоит, <span class="vdown">красный</span> — падает</div>`);
+       `<div class="legend">объём — оборот за последний час; цвет — что с объёмом в последние 15 минут: <span class="vup">зелёный</span> растёт, <span class="vflat">белый</span> стоит, <span class="vdown">красный</span> падает</div>`);
   setLive();
 }
 // ---- Слежка за одной монетой ---------------------------------------------
@@ -653,21 +663,30 @@ function beep(kind){
   if (!soundOn) return;
   ensureAudio(); if (!actx) return;
   const notes = kind === "rocket" ? [880, 1175, 1568] : kind === "rocket2" ? [784, 1047] : [523, 659];
-  const t0 = actx.currentTime + 0.02;
-  notes.forEach((f, i) => {
-    const o = actx.createOscillator(), g = actx.createGain();
-    o.type = "sine"; o.frequency.value = f;
-    const st = t0 + i * 0.16;
-    g.gain.setValueAtTime(0.0001, st); g.gain.exponentialRampToValueAtTime(0.35, st + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, st + 0.15);
-    o.connect(g).connect(actx.destination); o.start(st); o.stop(st + 0.16);
-  });
-  try{ navigator.vibrate && navigator.vibrate(kind === "rocket" ? [120, 60, 120, 60, 120] : [120, 60, 120]); }catch(e){}
+  // громкость: квадратная волна звучит заметно громче синусоиды, плюс компрессор «поднимает» сигнал
+  const comp = actx.createDynamicsCompressor();
+  comp.threshold.value = -30; comp.knee.value = 0; comp.ratio.value = 12; comp.attack.value = 0.002; comp.release.value = 0.1;
+  const master = actx.createGain(); master.gain.value = 1.6;
+  comp.connect(master).connect(actx.destination);
+  const t0 = actx.currentTime + 0.02, step = 0.2, repeats = kind === "rocket" ? 3 : 2;
+  for (let r = 0; r < repeats; r++){
+    notes.forEach((f, i) => {
+      const st = t0 + (r * (notes.length + 1) + i) * step;
+      for (const [type, mul, vol] of [["square", 1, 0.5], ["sine", 2, 0.4]]){
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.type = type; o.frequency.value = f * mul;
+        g.gain.setValueAtTime(0.0001, st); g.gain.exponentialRampToValueAtTime(vol, st + 0.01);
+        g.gain.setValueAtTime(vol, st + step - 0.05); g.gain.exponentialRampToValueAtTime(0.0001, st + step - 0.01);
+        o.connect(g).connect(comp); o.start(st); o.stop(st + step);
+      }
+    });
+  }
+  try{ navigator.vibrate && navigator.vibrate(kind === "rocket" ? [300, 100, 300, 100, 300] : [250, 100, 250]); }catch(e){}
 }
 function checkNew(id, items, kind){
   const now = Date.now(), cur = new Set(items.filter(m => !hidden.has(m.s)).map(m => m.s));
   const prev = prevIn.get(id); prevIn.set(id, cur);
-  if (!prev) return;                                  // первое заполнение блока: без звука
+  if (!prev){ setTimeout(refreshPace, 500); return; }  // первое заполнение блока: без звука, сразу считаем цвет объёма
   let fresh = false;
   for (const s of cur){
     if (prev.has(s)) continue;
@@ -675,7 +694,7 @@ function checkNew(id, items, kind){
     if (now - (lastBeep.get(key) || 0) < 30 * 60000) continue;
     lastBeep.set(key, now); newUntil.set(s, now + 60000); fresh = true;
   }
-  if (fresh) beep(kind);
+  if (fresh){ beep(kind); setTimeout(refreshPace, 300); }
 }
 function setSound(on){
   soundOn = on;
@@ -712,9 +731,13 @@ function paceCls(s){
   if (r == null) return "vwait";
   return r >= 1.2 ? "vup" : r <= 0.8 ? "vdown" : "vflat";
 }
+let paceSyms = new Set(), paceBusy = false;
 async function refreshPace(){
-  if (!calc || !calc.volume.length) return;
-  const syms = calc.volume.map(m => m.s).filter(s => !hidden.has(s));
+  if (!calc || paceBusy) return;
+  const syms = [...paceSyms].filter(s => !hidden.has(s));
+  if (!syms.length) return;
+  paceBusy = true;
+  try{
   await pool(syms, 4, async s => {
     const k = klinesToArr(await api(`/api/v3/klines?symbol=${s}&interval=1m&limit=31`));
     const kc = k.filter(b => b.ct < Date.now());
@@ -723,6 +746,7 @@ async function refreshPace(){
     const now15 = sum(kc.slice(-15)), prev15 = sum(kc.slice(-30, -15));
     if (prev15 > 0) pace.set(s, now15 / prev15);
   });
+  }finally{ paceBusy = false; }
   scheduleRender();
 }
 
