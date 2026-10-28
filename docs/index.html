@@ -23,6 +23,7 @@
   --up:#22c55e; --down:#f05252; --flat:#8b93a1; --accent:#f0b90b; --chip:#20242c;
 }
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{margin:0;background:var(--bg);color:var(--text)}
 body{font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   padding:0 16px calc(24px + env(safe-area-inset-bottom));-webkit-text-size-adjust:100%}
@@ -61,8 +62,39 @@ section h2 small{font-size:12.5px;color:var(--muted);font-weight:500}
 .hiddenbar{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13.5px;color:var(--muted);
   background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:8px 8px 8px 14px;margin:0 0 12px}
 .vup{color:var(--up);font-weight:600} .vdown{color:var(--down);font-weight:600} .vflat{color:var(--text);font-weight:600} .vwait{color:var(--muted)}
-.w4 .cols,.w4 .row{grid-template-columns:1fr 56px 56px 74px 30px;gap:6px}
+.w4 .cols,.w4 .row{grid-template-columns:minmax(0,1fr) 60px 64px 80px 90px 28px;gap:6px}
+.n .sm{display:none}
 .vcol{font-size:14px}
+.cap{color:var(--muted);font-weight:500}
+.coin{min-width:0}
+.coin b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.blocks{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:start}
+.blocks section{margin:0}
+/* ---- телефоны поуже: компактнее колонки и шрифт ---- */
+@media (max-width:440px){
+  body{padding-left:10px;padding-right:10px}
+  .w4 .cols,.w4 .row{grid-template-columns:minmax(0,1fr) 50px 56px 50px 56px 20px;gap:3px}
+  .n .lg{display:none} .n .sm{display:inline}
+  .row{padding:8px 4px 8px 10px} .cols{padding:2px 4px 6px 10px}
+  .n{font-size:13px} .vcol{font-size:12.5px} .coin b{font-size:15px} .cols{font-size:10.5px}
+  .x{width:22px;font-size:18px}
+  section h2{font-size:15.5px;padding:11px 10px 4px} .legend{padding:0 10px 6px} .extra{font-size:12.5px}
+}
+/* ---- планшеты и компьютеры: шире, блоки в колонки ---- */
+@media (min-width:760px){
+  .wrap{max-width:1400px}
+  .blocks{grid-template-columns:repeat(auto-fill,minmax(460px,1fr))}
+  .top-row{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:12px;align-items:start}
+  .top-row .fg{margin:2px 0 12px}
+  .watch .grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .watch .lv{display:grid;grid-template-columns:1fr 1fr;column-gap:28px}
+  .watch .lvh{grid-column:1/-1}
+  h1{font-size:26px}
+}
+@media (min-width:1500px){
+  body{font-size:17px}
+  .wrap{max-width:1800px}
+}
 .legend{font-size:12px;color:var(--muted);padding:0 14px 6px}
 .hiddenbar button{border:0;background:var(--chip);color:var(--text);font-size:13.5px;padding:7px 12px;border-radius:9px;cursor:pointer}
 .row:active{background:var(--chip)}
@@ -129,6 +161,7 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;margin:16px 0 4px;l
     <div class="status" id="status">Загружаю данные Binance…</div>
   </header>
 
+  <div class="top-row">
   <div class="search">
     <span class="ico">🔍</span>
     <input id="q" type="text" enterkeyhint="search" autocomplete="off" autocapitalize="characters" spellcheck="false"
@@ -136,11 +169,6 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;margin:16px 0 4px;l
     <button id="qClear" aria-label="Очистить" hidden>×</button>
     <div class="sugg" id="sugg" hidden></div>
   </div>
-  <div class="watch" id="watch" hidden></div>
-  <div class="hiddenbar" id="hiddenBar" hidden><span id="hiddenText"></span><button id="showAll">Показать все</button></div>
-
-  <div class="err" id="err"></div>
-
   <div class="fg" id="fg" hidden>
     <div class="face" id="fgFace">😐</div>
     <div style="flex:1">
@@ -149,21 +177,28 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;margin:16px 0 4px;l
       <div class="bar"><i id="fgMark" style="left:50%"></i></div>
     </div>
   </div>
+  </div>
+  <div class="watch" id="watch" hidden></div>
+  <div class="hiddenbar" id="hiddenBar" hidden><span id="hiddenText"></span><button id="showAll">Показать все</button></div>
 
+  <div class="err" id="err"></div>
+
+  <div class="blocks">
   <section id="rockets" class="w4"><h2>🚀 Ракеты 100%+ <small></small></h2><div class="loading">Считаю…</div></section>
-  <section id="rockets2" class="w4"><h2>🚀 Ракеты 23%+ <small></small></h2><div class="loading">Считаю…</div></section>
+  <section id="rockets2" class="w4"><h2>🚀 Ракеты 30%+ <small></small></h2><div class="loading">Считаю…</div></section>
   <section id="volume" class="w4"><h2>💰 Объём ×2+ за час <small></small></h2><div class="loading">Считаю…</div></section>
+  </div>
 
   <footer>Цены и ракеты обновляются каждую секунду, объём ×2+ после каждой 15-минутной свечи, цвет объёма раз в 30 секунд.<br>
   Нажми на монету, чтобы открыть её график на TradingView; × скрывает монету до следующего открытия страницы.<br>
-  🔔 вверху включает звук, когда в любом блоке появляется новая монета (страница должна быть открыта).<br>Данные Binance. Не финансовая рекомендация.</footer>
+  🔔 вверху включает звук, когда в любом блоке появляется новая монета (страница должна быть открыта).<br>«кап.» — капитализация: циркулирующее предложение по данным Binance × текущая цена (приблизительно).<br>Данные Binance. Не финансовая рекомендация.</footer>
 </div>
 
 <script>
 "use strict";
 // ---- Настройки: те же, что у бота в канале -------------------------------
 const CFG = {
-  ROCKET_PCT: 100, ROCKET2_PCT: 23,   // ракеты: рост от дна до вершины за сутки; 23%+ = от 23 до 100% (с 27.10)
+  ROCKET_PCT: 100, ROCKET2_PCT: 30,   // ракеты: рост от дна до вершины за сутки; 30%+ = от 30 до 100% (28.10 вернули с 23)
   DUMP2_PCT: 30,                      // блока обвалов нет (убран 27.10); монета, которая после роста упала на 30%+, из ракет уходит
   MIN_DAY_USD: 1_000_000,        // для движения, ракет и обвалов: оборот за сутки
   VOL_MULT: 2, VOL_MIN_HOUR_USD: 700_000,   // оборот за последний час от $700 тыс.
@@ -344,11 +379,17 @@ function scheduleRecalc(){            // сразу после закрытия 
 
 // ---- Отрисовка ---------------------------------------------------------
 const pctCls = x => x >= 0.05 ? "up" : x <= -0.05 ? "down" : "flat";
-function pct(x){
-  if (x == null || !isFinite(x)) return '<span class="n flat">–</span>';
+function pctText(x){
+  if (x == null || !isFinite(x)) return "–";
   const v = Math.abs(x), s = v >= 100 ? v.toFixed(0) : v.toFixed(1);
-  const sign = x >= 0.05 ? "+" : x <= -0.05 ? "−" : "";
-  return `<span class="n ${pctCls(x)}">${sign}${s}%</span>`;
+  return (x >= 0.05 ? "+" : x <= -0.05 ? "−" : "") + s + "%";
+}
+function pct(x){                       // в таблицах: на узких телефонах от 10% без десятых (+96%)
+  if (x == null || !isFinite(x)) return '<span class="n flat">–</span>';
+  const v = Math.abs(x), full = pctText(x);
+  const short = v >= 10 ? (x >= 0.05 ? "+" : "−") + v.toFixed(0) + "%" : full;
+  return short === full ? `<span class="n ${pctCls(x)}">${full}</span>`
+    : `<span class="n ${pctCls(x)}"><span class="lg">${full}</span><span class="sm">${short}</span></span>`;
 }
 function price(p){
   if (!p) return "";
@@ -356,6 +397,7 @@ function price(p){
   return "$" + (+p.toFixed(d)).toLocaleString("en-US", {maximumFractionDigits: d});
 }
 function usd(x){
+  if (x >= 1e12) return "$" + (x / 1e12).toFixed(2) + "\u00a0трлн";
   if (x >= 1e9) return "$" + (x / 1e9).toFixed(1) + "\u00a0млрд";
   if (x >= 1e6) return "$" + (x / 1e6).toFixed(1) + "\u00a0млн";
   if (x >= 1e3) return "$" + (x / 1e3).toFixed(0) + "\u00a0тыс";
@@ -369,7 +411,28 @@ function volTrendShort(hv){         // для ракет: без суммы, с�
   return `➡️ объём за час стоит`;
 }
 const VOL_LEGEND = `<div class="legend">объём — оборот за последний час; цвет — что с объёмом в последние 15 минут: <span class="vup">зелёный</span> растёт, <span class="vflat">белый</span> стоит, <span class="vdown">красный</span> падает</div>`;
-const volCell = m => `<span class="n vcol ${paceCls(m.s)}">${m.hv && m.hv.now ? usd(m.hv.now) : "–"}</span>`;
+// Суммы в колонках: 3 значащие цифры; на узких телефонах короткая запись ($975M), на широких русская ($975 млн)
+function sig3(v){ return v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2); }
+function usdCol(x){
+  if (!x) return "–";
+  const u = [[1e12, "трлн", "T"], [1e9, "млрд", "B"], [1e6, "млн", "M"], [1e3, "тыс", "K"]].find(([d]) => x >= d);
+  if (!u) return "$" + x.toFixed(0);
+  const v = sig3(x / u[0]).replace(/\.0+$/, "");
+  const y = x / u[0], v2 = (y >= 10 ? y.toFixed(0) : y.toFixed(1)).replace(/\.0$/, "");
+  return `<span class="lg">$${v}\u00a0${u[1]}</span><span class="sm">$${v2}${u[2]}</span>`;
+}
+// Капитализация = циркулирующее предложение (с сайта Binance) × живая цена
+const caps = new Map();
+async function loadCaps(){
+  try{
+    const d = (await (await fetch("https://www.binance.com/bapi/asset/v2/public/asset-service/product/get-products?includeEtf=true")).json()).data;
+    for (const x of d) if (x.q === "USDT" && +x.cs > 0) caps.set(x.s, +x.cs);
+    scheduleRender();
+  }catch(e){ /* источник недоступен: в колонке будет «–» */ }
+}
+const capOf = s => { const cs = caps.get(s), t = tick.get(s); return cs && t && t.c ? cs * t.c : null; };
+const capCell = m => `<span class="n vcol cap">${usdCol(capOf(m.s))}</span>`;
+const volCell = m => `<span class="n vcol ${paceCls(m.s)}">${m.hv && m.hv.now ? usdCol(m.hv.now) : "–"}</span>`;
 function volTrend(hv){
   if (!hv || !hv.now || !hv.prev) return "";
   const r = hv.now / hv.prev;
@@ -420,13 +483,13 @@ function render(){
   checkNew("rockets", rockets, "rocket"); checkNew("rockets2", rockets2, "rocket2"); checkNew("volume", vol, "volume");
 
   paceSyms = new Set([...rockets, ...rockets2, ...vol].map(m => m.s));
-  fill("rockets", rockets, `Ракет с ростом ${CFG.ROCKET_PCT}+% сегодня нет.`, ["час", "рост", "объём"],
-       m => row(m, pct(m.rise), volTrendShort(m.hv), volCell(m)), VOL_LEGEND);
-  fill("rockets2", rockets2, `Монет с ростом от ${CFG.ROCKET2_PCT} до ${CFG.ROCKET_PCT}% сегодня нет.`, ["час", "рост", "объём"],
-       m => row(m, pct(m.rise), volTrendShort(m.hv), volCell(m)), VOL_LEGEND);
-  fill("volume", vol, `Монет с ростом объёма ×${CFG.VOL_MULT}+ за час сейчас нет.`, ["час", "сутки", "объём"],
+  fill("rockets", rockets, `Ракет с ростом ${CFG.ROCKET_PCT}+% сегодня нет.`, ["час", "рост", "объём", "кап."],
+       m => row(m, pct(m.rise), volTrendShort(m.hv), volCell(m) + capCell(m)), VOL_LEGEND);
+  fill("rockets2", rockets2, `Монет с ростом от ${CFG.ROCKET2_PCT} до ${CFG.ROCKET_PCT}% сегодня нет.`, ["час", "рост", "объём", "кап."],
+       m => row(m, pct(m.rise), volTrendShort(m.hv), volCell(m) + capCell(m)), VOL_LEGEND);
+  fill("volume", vol, `Монет с ростом объёма ×${CFG.VOL_MULT}+ за час сейчас нет.`, ["час", "сутки", "объём", "кап."],
        m => row(m, undefined, `⬆️ объём за час в <b>${(m.hv.now / m.hv.prev).toFixed(1)} раза</b> больше прошлого`,
-                `<span class="n vcol ${paceCls(m.s)}">${usd(m.hv.now)}</span>`),
+                volCell(m) + capCell(m)),
        `<div class="legend">объём — оборот за последний час; цвет — что с объёмом в последние 15 минут: <span class="vup">зелёный</span> растёт, <span class="vflat">белый</span> стоит, <span class="vdown">красный</span> падает</div>`);
   setLive();
 }
@@ -568,13 +631,14 @@ function renderWatch(){
   const vt = volTrend(watch.hv);
   box.innerHTML = head(tag) + `
     <div class="grid">
-      <div>За час<b class="${pctCls(h1)}">${pct(h1).replace(/<[^>]+>/g, "")}</b></div>
-      <div>За сутки<b class="${pctCls(d24)}">${pct(d24).replace(/<[^>]+>/g, "")}</b></div>
+      <div>За час<b class="${pctCls(h1)}">${pctText(h1)}</b></div>
+      <div>За сутки<b class="${pctCls(d24)}">${pctText(d24)}</b></div>
       <div>Рост от дна за сутки<b class="up">+${m.rise.toFixed(1)}%</b></div>
       <div>Падение от вершины<b class="down">−${m.drop.toFixed(1)}%</b></div>
       <div>Оборот за сутки<b>${usd(t.q)}</b></div>
+      <div>Капитализация<b>${capOf(watch.s) ? usd(capOf(watch.s)) : "–"}</b></div>
       <div>Мин. за сутки<b>${price(t.l)}</b></div>
-      <div class="wide">Макс. за сутки<b>${price(t.h)}</b></div>
+      <div>Макс. за сутки<b>${price(t.h)}</b></div>
     </div>
     ${liveVolume(t)}
     ${spark(k)}
@@ -787,6 +851,7 @@ async function loadFG(){
   loadFG(); setInterval(loadFG, 30 * 60 * 1000);
   setupSearch(); setupRows(); setupSound();
   loadBybit(); setInterval(loadBybit, 3 * 3600 * 1000);
+  loadCaps(); setInterval(loadCaps, 6 * 3600 * 1000);
   let saved = null; try{ saved = localStorage.getItem("nyuh_watch"); }catch(e){}
   try{ await loadTickers(); }catch(e){ showErr("Не могу получить данные Binance: " + e.message); }
   if (saved) watchCoin(saved);
